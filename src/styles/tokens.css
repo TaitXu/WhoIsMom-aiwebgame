@@ -1,26 +1,24 @@
 :root {
   font-family: Inter, ui-rounded, "SF Pro Rounded", "PingFang SC", "Microsoft YaHei", sans-serif;
-  color: #173b45;
-  background: #bcdadd;
+  color: #163e46;
+  background: #58c8cf;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #173b45;
-  --ink-soft: #4b6870;
-  --paper: rgba(255, 252, 235, 0.95);
-  --paper-solid: #fffceb;
-  --line: rgba(23, 59, 69, 0.18);
-  --yellow: #f1c94b;
-  --green: #4fbd79;
-  --cyan: #56c7d1;
-  --coral: #e97968;
-  --pink: #e98b91;
-  --danger: #c75152;
-  --shadow: 0 10px 24px rgba(23, 59, 69, 0.16);
+  --ink: #163e46;
+  --ink-soft: #4e6d70;
+  --paper: #fff9df;
+  --paper-cool: #e6f5ec;
+  --line: rgba(22, 62, 70, 0.2);
+  --yellow: #f3ce5a;
+  --green: #65bf72;
+  --cyan: #67cdd3;
+  --coral: #e87866;
+  --pink: #ee98aa;
+  --blue: #8fc7de;
+  --shadow: 0 8px 22px rgba(22, 62, 70, 0.18);
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html,
 body,
@@ -32,15 +30,11 @@ body,
 }
 
 button,
-kbd {
-  font: inherit;
-}
+kbd { font: inherit; }
 
 button:focus-visible {
-  outline: 3px solid rgba(86, 199, 209, 0.75);
+  outline: 3px solid rgba(255, 249, 223, 0.95);
   outline-offset: 2px;
 }
 
-[hidden] {
-  display: none !important;
-}
+[hidden] { display: none !important; }

@@ -96,6 +96,9 @@ function systemPrompt(task: AgentRequest["task"]): string {
   if (task === "encode_memory") {
     return "You encode a tadpole's limited memory. Return one JSON object only. Use only provided fact IDs. Personality may omit context but may not invent facts. Required fields: task, selectedFactIds, omittedFields, suggestedSlot, tone, spokenSummary. spokenSummary must be concise Chinese.";
   }
+  if (task === "judge_jump_learning") {
+    return "You judge whether a tadpole learned jumping from its actual memories and personality. Return one JSON object only. Use only provided memory IDs. Non-cautious personalities must return learned; cautious may return partial or learned. Required fields: task, outcome, relevantMemoryIds, spokenSummary. spokenSummary must be concise Chinese.";
+  }
   return "You reconcile two tadpoles' existing memories. Return one JSON object only. Use only provided memory IDs. Required fields: task, outcome, acceptedMemoryIds, questionedMemoryIds, spokenSummary. spokenSummary must be concise Chinese.";
 }
 

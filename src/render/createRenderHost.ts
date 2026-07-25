@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { createCameraRig, type CameraRig } from "./cameraRig";
-import { buildEnvironment } from "./environmentBuilder";
+import { buildEnvironment, type EnvironmentView } from "./environmentBuilder";
 import { createLightingRig } from "./lightingRig";
 import { createMaterialPalette, type MaterialPalette, worldColors } from "./materialPalette";
 
@@ -10,6 +10,7 @@ export interface RenderHost {
   cameraRig: CameraRig;
   palette: MaterialPalette;
   worldRoot: THREE.Group;
+  environment: EnvironmentView;
   resize(): void;
   render(elapsed: number): void;
   getPixelDiagnostics(): Readonly<PixelDiagnostics>;
@@ -71,6 +72,11 @@ export function createRenderHost(canvas: HTMLCanvasElement): RenderHost {
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
     cameraRig.resize(width, height);
+    const cameraScale = cameraRig.getDistanceScale();
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.near = 23 * cameraScale;
+      scene.fog.far = Math.min(cameraRig.camera.far - 5, 54 * cameraScale);
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(width, height, false);
   }
@@ -81,6 +87,7 @@ export function createRenderHost(canvas: HTMLCanvasElement): RenderHost {
     cameraRig,
     palette,
     worldRoot,
+    environment,
     resize,
     render(elapsed) {
       environment.update(elapsed);
@@ -97,7 +104,11 @@ export function createRenderHost(canvas: HTMLCanvasElement): RenderHost {
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
       scene.traverse((object) => {
-        if (object instanceof THREE.Mesh) object.geometry.dispose();
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach((material) => material.dispose());
+        }
       });
       palette.dispose();
       renderer.dispose();

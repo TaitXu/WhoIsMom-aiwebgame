@@ -28,6 +28,19 @@ function fallbackResult(request: AgentRequest): AgentResult {
     };
   }
 
+  if (request.task === "judge_jump_learning") {
+    const jumpMemories = request.memories.filter((memory) => memory.topic === "jump");
+    const learned = request.agent.personality !== "cautious" || jumpMemories.some((memory) => memory.reinforced);
+    return {
+      task: "judge_jump_learning",
+      outcome: learned ? "learned" : "partial",
+      relevantMemoryIds: jumpMemories.map((memory) => memory.id),
+      spokenSummary: learned
+        ? "我懂了，要等荷叶回弹的时候朝叶心跳。"
+        : "我记住步骤了，但还是不太敢真的跳过去。",
+    };
+  }
+
   const contextualMemories = request.memories.filter((memory) => hasPlaceContext(memory.summary));
   const contextlessTravelMemories = request.memories.filter(
     (memory) => memory.sourceNpcId === "dragonfly" && !hasPlaceContext(memory.summary),

@@ -17,23 +17,29 @@ function createAgentState(id: AgentId, name: string, personality: Personality): 
     personality,
     mode: "following",
     memories: [null, null, null],
+    memoryCapacity: 3,
+    fatigue: 0,
+    jumpKnowledge: "none",
   };
 }
 
 export function createInitialGameState(): GameState {
   const agents = Object.fromEntries(
-    agentDefinitions.map(({ id, name, personality }) => [
-      id,
-      createAgentState(id, name, personality),
-    ]),
+    agentDefinitions.map(({ id, name, personality }) => [id, createAgentState(id, name, personality)]),
   ) as Record<AgentId, AgentState>;
 
   return {
     phase: "explore",
-    actionsLeft: 7,
-    atPond: false,
+    sessionSeed: 73129,
+    inspiration: 0,
+    currentRegionId: "hatching-pool",
+    discoveredRegionIds: ["hatching-pool"],
+    discoveredEntityIds: [],
+    clearedObstacleIds: [],
+    scoutedGateIds: [],
+    atRestSpot: true,
     agents,
-    objective: "带着小队沿河寻找目击者",
+    objective: "从孵化静池出发，认识这片相连的水乡",
     evidenceLog: [],
     revision: 0,
   };

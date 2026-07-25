@@ -23,6 +23,7 @@ describe("memory slots", () => {
     expect(
       chooseMemorySlot({
         personality: "cautious",
+        memoryCapacity: 3,
         memories: [memory("a", 1), null, null],
       }),
     ).toBe(1);
@@ -32,6 +33,7 @@ describe("memory slots", () => {
     expect(
       chooseMemorySlot({
         personality: "cautious",
+        memoryCapacity: 3,
         memories: [memory("old-protected", 1, true), memory("replace", 2), memory("new", 3)],
       }),
     ).toBe(1);
@@ -41,6 +43,7 @@ describe("memory slots", () => {
     expect(
       chooseMemorySlot({
         personality: "social",
+        memoryCapacity: 3,
         memories: [memory("shared", 1, true), memory("solo", 2), memory("shared-new", 3, true)],
       }),
     ).toBe(1);

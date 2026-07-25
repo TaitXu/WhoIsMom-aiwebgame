@@ -59,4 +59,33 @@ describe("AI contracts", () => {
       }),
     ).toBeNull();
   });
+
+  it("accepts a constrained jump-learning judgment", () => {
+    const jumpMemory = {
+      id: "jump-memory",
+      factIds: ["grasshopper-jump"],
+      topic: "jump" as const,
+      summary: "等荷叶回弹时跳向叶心。",
+      rememberedSource: "弹簧蚱蜢",
+      sourceNpcId: "grasshopper" as const,
+      emotion: "calm" as const,
+      confidence: "believed" as const,
+      createdAt: 1,
+      reinforced: false,
+      resultSource: "fallback" as const,
+    };
+    const jumpRequest = {
+      requestId: "jump",
+      task: "judge_jump_learning" as const,
+      agent: { id: "paopao" as const, personality: "social" as const },
+      memories: [jumpMemory],
+    };
+    expect(validateAgentRequest(jumpRequest)).not.toBeNull();
+    expect(validateAgentResult(jumpRequest, {
+      task: "judge_jump_learning",
+      outcome: "learned",
+      relevantMemoryIds: ["jump-memory"],
+      spokenSummary: "我懂得怎么跳了。",
+    })).not.toBeNull();
+  });
 });

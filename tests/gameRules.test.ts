@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { EvidenceEvent, InvestigationTask, Memory } from "../src/core/types";
-import { reduceGameState } from "../src/game/state/gameRules";
+import type { CleanupTask, EvidenceEvent, InvestigationTask, Memory } from "../src/core/types";
+import { confirmedSourceCount, reduceGameState } from "../src/game/state/gameRules";
 import { createInitialGameState } from "../src/game/state/gameState";
 
 const task: InvestigationTask = {
+  type: "investigation",
   id: "task-1",
   npcId: "dragonfly",
   topic: "appearance",
@@ -31,11 +32,12 @@ const evidence: EvidenceEvent = {
   topic: "appearance",
   summary: learnedMemory.summary,
   sourceLabel: "旅行蜻蜓",
+  sourceNpcIds: ["dragonfly"],
   createdAt: 1,
 };
 
 describe("game rules", () => {
-  it("completes an investigation once and spends one action", () => {
+  it("completes an investigation once without a global action budget", () => {
     let state = createInitialGameState();
     state = reduceGameState(state, { type: "START_INVESTIGATION", agentId: "xiaolang", task });
     state = reduceGameState(state, { type: "BEGIN_INTERACTION", agentId: "xiaolang", taskId: task.id });
@@ -46,10 +48,11 @@ describe("game rules", () => {
       memory: learnedMemory,
       slot: 0,
       evidence,
+      fatigue: 8,
     });
 
-    expect(state.actionsLeft).toBe(6);
     expect(state.agents.xiaolang.memories[0]?.id).toBe("memory-1");
+    expect(state.agents.xiaolang.fatigue).toBe(8);
     expect(state.evidenceLog).toHaveLength(1);
     expect(state.agents.xiaolang.mode).toBe("returning");
 
@@ -60,92 +63,77 @@ describe("game rules", () => {
       memory: learnedMemory,
       slot: 1,
       evidence,
+      fatigue: 8,
     });
     expect(duplicate).toBe(state);
   });
 
-  it("ignores a late AI result after recall", () => {
+  it("ignores a late AI result after recall or ending", () => {
     let state = createInitialGameState();
     state = reduceGameState(state, { type: "START_INVESTIGATION", agentId: "xiaolang", task });
     state = reduceGameState(state, { type: "BEGIN_INTERACTION", agentId: "xiaolang", taskId: task.id });
     state = reduceGameState(state, { type: "RECALL_AGENT", agentId: "xiaolang" });
-    const afterLateResult = reduceGameState(state, {
+    const afterRecall = reduceGameState(state, {
       type: "COMPLETE_INVESTIGATION",
       agentId: "xiaolang",
       taskId: task.id,
       memory: learnedMemory,
       slot: 0,
       evidence,
+      fatigue: 8,
     });
+    expect(afterRecall).toBe(state);
 
-    expect(afterLateResult).toBe(state);
-    expect(state.actionsLeft).toBe(7);
-    expect(state.agents.xiaolang.memories[0]).toBeNull();
-  });
-
-  it("ignores a late AI result after the game has ended", () => {
-    let state = createInitialGameState();
-    state = reduceGameState(state, { type: "START_INVESTIGATION", agentId: "xiaolang", task });
-    state = reduceGameState(state, { type: "BEGIN_INTERACTION", agentId: "xiaolang", taskId: task.id });
-    state = reduceGameState(state, {
-      type: "CHOOSE_MOTHER",
-      frogId: "marsh-frog",
-      correct: true,
-    });
-    const endingState = state;
-    const afterLateResult = reduceGameState(state, {
+    let endingState = createInitialGameState();
+    endingState = reduceGameState(endingState, { type: "START_INVESTIGATION", agentId: "xiaolang", task });
+    endingState = reduceGameState(endingState, { type: "BEGIN_INTERACTION", agentId: "xiaolang", taskId: task.id });
+    endingState = reduceGameState(endingState, { type: "CHOOSE_MOTHER", frogId: "marsh-frog", correct: true });
+    const afterEnding = reduceGameState(endingState, {
       type: "COMPLETE_INVESTIGATION",
       agentId: "xiaolang",
       taskId: task.id,
       memory: learnedMemory,
       slot: 0,
       evidence,
+      fatigue: 8,
     });
-
-    expect(afterLateResult).toBe(endingState);
-    expect(afterLateResult.actionsLeft).toBe(7);
-    expect(afterLateResult.objective).toBe("你们找到了真正的妈妈");
-    expect(afterLateResult.agents.xiaolang.memories[0]).toBeNull();
-    expect(afterLateResult.evidenceLog).toHaveLength(0);
+    expect(afterEnding).toBe(endingState);
   });
 
-  it("updates confidence during discussion and spends one action", () => {
-    let state = createInitialGameState();
-    state.agents.xiaolang.memories[0] = learnedMemory;
-    state.agents.modian.memories[0] = {
-      ...learnedMemory,
-      id: "memory-local",
-      topic: "location",
-      sourceNpcId: "turtle",
-      rememberedSource: "老乌龟",
+  it("clears an obstacle once, rewards inspiration, and upgrades one agent memory", () => {
+    const cleanup: CleanupTask = {
+      type: "cleanup",
+      id: "cleanup-1",
+      obstacleId: "driftwood-jam",
+      participantIds: ["xiaolang", "paopao"],
     };
+    let state = createInitialGameState();
+    state = reduceGameState(state, { type: "START_CLEANUP", task: cleanup });
+    state = reduceGameState(state, { type: "BEGIN_WORK", agentId: "xiaolang", taskId: cleanup.id });
+    state = reduceGameState(state, { type: "BEGIN_WORK", agentId: "paopao", taskId: cleanup.id });
     state = reduceGameState(state, {
-      type: "START_DISCUSSION",
-      discussion: {
-        id: "discussion-1",
-        agentIds: ["xiaolang", "modian"],
-        topic: "location",
-      },
+      type: "COMPLETE_CLEANUP",
+      taskId: cleanup.id,
+      obstacleId: cleanup.obstacleId,
+      agentIds: cleanup.participantIds,
+      inspiration: 2,
+      fatigue: 10,
+      evidence: { ...evidence, id: "cleanup-evidence", kind: "cleanup", agentIds: cleanup.participantIds },
     });
-    state = reduceGameState(state, {
-      type: "COMPLETE_DISCUSSION",
-      discussionId: "discussion-1",
-      updates: [
-        { agentId: "xiaolang", memoryId: "memory-1", confidence: "questioned", reinforced: false },
-        { agentId: "modian", memoryId: "memory-local", confidence: "confirmed", reinforced: true },
-      ],
-      evidence: {
-        ...evidence,
-        id: "discussion-evidence",
-        kind: "discussion",
-        agentIds: ["xiaolang", "modian"],
-        summary: "雨林不是本地",
-      },
-    });
+    expect(state.inspiration).toBe(2);
+    expect(state.clearedObstacleIds).toEqual(["driftwood-jam"]);
+    expect(state.agents.xiaolang.fatigue).toBe(10);
 
-    expect(state.actionsLeft).toBe(6);
-    expect(state.agents.xiaolang.memories[0]?.confidence).toBe("questioned");
-    expect(state.agents.modian.memories[0]?.confidence).toBe("confirmed");
-    expect(state.discussion).toBeUndefined();
+    state = reduceGameState(state, { type: "UPGRADE_MEMORY", agentId: "modian" });
+    expect(state.inspiration).toBe(0);
+    expect(state.agents.modian.memoryCapacity).toBe(4);
+    expect(state.agents.modian.memories).toHaveLength(4);
+  });
+
+  it("tracks two confirmed independent sources after discussion", () => {
+    let state = createInitialGameState();
+    state.agents.xiaolang.memories[0] = { ...learnedMemory, id: "turtle-memory", sourceNpcId: "turtle", confidence: "confirmed" };
+    state.agents.modian.memories[0] = { ...learnedMemory, id: "crab-memory", sourceNpcId: "crab", confidence: "confirmed" };
+    expect(confirmedSourceCount(state)).toBe(2);
   });
 });

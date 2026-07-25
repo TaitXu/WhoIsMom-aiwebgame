@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 export type InteractiveTarget = {
-  type: "agent" | "npc" | "frog";
+  type: "agent" | "npc" | "frog" | "obstacle" | "gate";
   id: string;
 };
 
@@ -33,7 +33,7 @@ export function createPointerController(options: {
     while (current) {
       const type = current.userData.entityType as string | undefined;
       const id = current.userData.entityId as string | undefined;
-      if ((type === "agent" || type === "npc" || type === "frog") && id) return { type, id };
+      if ((type === "agent" || type === "npc" || type === "frog" || type === "obstacle" || type === "gate") && id) return { type, id };
       current = current.parent;
     }
     return null;

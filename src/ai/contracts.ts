@@ -33,7 +33,17 @@ export type ReconcileMemoriesRequest = {
   memories: Memory[];
 };
 
-export type AgentRequest = EncodeMemoryRequest | ReconcileMemoriesRequest;
+export type JudgeJumpLearningRequest = {
+  requestId: string;
+  task: "judge_jump_learning";
+  agent: {
+    id: AgentId;
+    personality: Personality;
+  };
+  memories: Memory[];
+};
+
+export type AgentRequest = EncodeMemoryRequest | ReconcileMemoriesRequest | JudgeJumpLearningRequest;
 
 export type EncodeMemoryResult = {
   task: "encode_memory";
@@ -52,7 +62,14 @@ export type ReconcileMemoriesResult = {
   spokenSummary: string;
 };
 
-export type AgentResult = EncodeMemoryResult | ReconcileMemoriesResult;
+export type JudgeJumpLearningResult = {
+  task: "judge_jump_learning";
+  outcome: "partial" | "learned";
+  relevantMemoryIds: string[];
+  spokenSummary: string;
+};
+
+export type AgentResult = EncodeMemoryResult | ReconcileMemoriesResult | JudgeJumpLearningResult;
 
 export type AgentResponse = {
   requestId: string;
@@ -62,7 +79,7 @@ export type AgentResponse = {
 
 const agentIds = new Set<AgentId>(["modian", "xiaolang", "paopao"]);
 const personalities = new Set<Personality>(["cautious", "impulsive", "social"]);
-const topics = new Set<Topic>(["appearance", "location", "source"]);
+const topics = new Set<Topic>(["appearance", "location", "source", "jump"]);
 const emotions = new Set<Emotion>(["calm", "excited", "afraid"]);
 const allowedOmissions = new Set(["time", "place", "source"]);
 const outcomes = new Set(["reinforce", "question", "revise"]);
@@ -93,13 +110,23 @@ export function validateAgentRequest(value: unknown): AgentRequest | null {
     return value as ReconcileMemoriesRequest;
   }
 
+  if (value.task === "judge_jump_learning") {
+    if (!isRecord(value.agent)) return null;
+    if (!agentIds.has(value.agent.id as AgentId)) return null;
+    if (!personalities.has(value.agent.personality as Personality)) return null;
+    if (!isMemoryList(value.memories, false) || value.memories.length === 0 || value.memories.length > 5) return null;
+    if (!(value.memories as Memory[]).some((memory) => memory.topic === "jump")) return null;
+    return value as JudgeJumpLearningRequest;
+  }
+
   return null;
 }
 
 export function validateAgentResult(request: AgentRequest, value: unknown): AgentResult | null {
   if (!isRecord(value) || value.task !== request.task) return null;
   if (request.task === "encode_memory") return validateEncodeResult(request, value);
-  return validateReconcileResult(request, value);
+  if (request.task === "reconcile_memories") return validateReconcileResult(request, value);
+  return validateJumpLearningResult(request, value);
 }
 
 function validateEncodeResult(
@@ -140,6 +167,24 @@ function validateReconcileResult(
     outcome: value.outcome as ReconcileMemoriesResult["outcome"],
     acceptedMemoryIds: value.acceptedMemoryIds,
     questionedMemoryIds: value.questionedMemoryIds,
+    spokenSummary: value.spokenSummary,
+  };
+}
+
+function validateJumpLearningResult(
+  request: JudgeJumpLearningRequest,
+  value: Record<string, unknown>,
+): JudgeJumpLearningResult | null {
+  const allowedIds = new Set(request.memories.map((memory) => memory.id));
+  if (value.outcome !== "partial" && value.outcome !== "learned") return null;
+  if (request.agent.personality !== "cautious" && value.outcome !== "learned") return null;
+  if (!isStringArray(value.relevantMemoryIds) || value.relevantMemoryIds.length === 0) return null;
+  if (!value.relevantMemoryIds.every((id) => allowedIds.has(id))) return null;
+  if (!isSummary(value.spokenSummary)) return null;
+  return {
+    task: "judge_jump_learning",
+    outcome: value.outcome,
+    relevantMemoryIds: value.relevantMemoryIds,
     spokenSummary: value.spokenSummary,
   };
 }
