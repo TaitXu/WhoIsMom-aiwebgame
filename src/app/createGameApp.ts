@@ -4,6 +4,7 @@ import { createAgentService } from "../ai/agentService";
 import { createLocalAgentFallback } from "../ai/localAgentFallback";
 import { createLlmConfigStore } from "../ai/llmConfig";
 import { createRemoteAgentAdapter } from "../ai/remoteAgentAdapter";
+import { createGameSoundEffects } from "../audio/gameSoundEffects";
 import { createDebugPanel } from "../diagnostics/createDebugPanel";
 import { demoCase } from "../game/case/demoCase";
 import {
@@ -36,6 +37,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
   const llmConfig = createLlmConfigStore();
   const service = createAgentService(createRemoteAgentAdapter("/api/agent", 22_000, llmConfig), createLocalAgentFallback());
   const director = createGameDirector({ store, service });
+  const sounds = createGameSoundEffects(options.root);
   let gameStarted = false;
 
   async function startGame(): Promise<void> {
@@ -65,6 +67,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
     response.result.frogs.forEach((profile) => views.frogs[profile.id].applyAppearance(profile.features));
     store.dispatch({ type: "APPLY_GENERATED_CAST", cast });
     gameStarted = true;
+    sounds.play("start");
   }
 
   const player = createPlayerFish(host.palette);
@@ -122,9 +125,18 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
   });
   world.reset();
 
-  const selectAgent = (agentId?: AgentId): void => store.dispatch({ type: "SELECT_AGENT", agentId });
-  const selectAgents = (agentIds: AgentId[]): void => store.dispatch({ type: "SELECT_AGENTS", agentIds });
-  const setFailureObjective = (message: string): void => store.dispatch({ type: "SET_OBJECTIVE", objective: message });
+  const selectAgent = (agentId?: AgentId): void => {
+    store.dispatch({ type: "SELECT_AGENT", agentId });
+    if (agentId) sounds.play("select");
+  };
+  const selectAgents = (agentIds: AgentId[]): void => {
+    store.dispatch({ type: "SELECT_AGENTS", agentIds });
+    if (agentIds.length > 0) sounds.play("select");
+  };
+  const setFailureObjective = (message: string): void => {
+    store.dispatch({ type: "SET_OBJECTIVE", objective: message });
+    sounds.play("deny");
+  };
   const attemptScoutGate = (gateId: GateId): boolean => {
     const state = store.getState();
     if (state.nearbyGateId !== gateId) {
@@ -187,6 +199,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
     },
   });
 
+  let previousState = store.getState();
   const unsubscribe = store.subscribe((state) => {
     hud.render(state);
     agentOrder.forEach((agentId) => views.agents[agentId].setSelected(state.selectedAgentIds.includes(agentId)));
@@ -202,6 +215,11 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
     options.canvas.dataset.gameMemoryCounts = agentOrder.map((id) => state.agents[id].memories.filter(Boolean).length).join(",");
     options.canvas.dataset.gameAgentModes = agentOrder.map((id) => state.agents[id].mode).join(",");
     options.canvas.dataset.gameJump = agentOrder.map((id) => state.agents[id].jumpKnowledge).join(",");
+    if (state.phase === "ending" && previousState.phase !== "ending") sounds.play(state.ending?.correct ? "success" : "failure");
+    else if (state.candidateFrogsRevealed && !previousState.candidateFrogsRevealed) sounds.play("reveal");
+    else if (state.inspiration > previousState.inspiration) sounds.play("reward");
+    else if (state.evidenceLog.length > previousState.evidenceLog.length) sounds.play("clue");
+    previousState = state;
   });
 
   const input = createInputController({
@@ -213,6 +231,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
     },
     onWhistle() {
       if (!gameStarted) return;
+      sounds.play("whistle");
       const recalled = world.whistle(7.5);
       store.dispatch({ type: "SET_OBJECTIVE", objective: recalled > 0 ? `口哨响起，${recalled} 只蝌蚪正在回到身边` : "口哨响起，附近没有需要召回的蝌蚪" });
     },
@@ -274,7 +293,10 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
       selectionBox.style.width = `${rect.width}px`;
       selectionBox.style.height = `${rect.height}px`;
     },
-    onMoveTarget(point) { world.setNavigationTarget(point); },
+    onMoveTarget(point) {
+      sounds.play("splash");
+      world.setNavigationTarget(point);
+    },
   });
   agentOrder.forEach((id) => pointer.add(views.agents[id].group));
   demoCase.npcs.forEach((item) => pointer.add(views.npcs[item.id].group));
@@ -432,6 +454,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
       debugPanel.dispose();
       unsubscribe();
       hud.dispose();
+      sounds.dispose();
       delete debugWindow.__WHO_IS_MOM_DEBUG__;
       host.dispose();
     },

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0">
+  <title>04 · 核心游戏循环</title>
+  <link rel="stylesheet" href="../shared/deck.css">
+  <style>
+    main { padding:68px 78px; background:var(--cream); }
+    header { display:flex; align-items:start; justify-content:space-between; }
+    h1 { width:1380px; margin:0; font-family:"Avenir Next","PingFang SC",sans-serif; font-size:76px; font-weight:900; line-height:1.06; }
+    .badge { padding:16px 22px; color:var(--cream); background:var(--ink); font-family:"Avenir Next",sans-serif; font-size:24px; font-weight:900; }
+    .loop { display:grid; grid-template-columns:.9fr 1fr 1.05fr 1fr 1.1fr .95fr; height:422px; margin-top:48px; border:7px solid var(--ink); }
+    .step { position:relative; display:flex; flex-direction:column; justify-content:space-between; padding:34px 28px 30px; border-right:7px solid var(--ink); }
+    .step:last-child { border-right:0; }
+    .step:nth-child(1) { background:var(--cyan); }
+    .step:nth-child(2) { background:var(--yellow); }
+    .step:nth-child(3) { background:var(--pink); }
+    .step:nth-child(4) { background:var(--green); }
+    .step:nth-child(5) { background:var(--coral); }
+    .step:nth-child(6) { color:var(--cream); background:var(--ink); }
+    .step small { font-family:"Avenir Next",sans-serif; font-size:19px; font-weight:900; }
+    .step strong { font-family:"Avenir Next","PingFang SC",sans-serif; font-size:51px; line-height:1; }
+    .step p { margin:0; font-size:24px; line-height:1.3; }
+    .step:not(:last-child)::after { content:"›"; position:absolute; z-index:3; right:-27px; top:166px; width:48px; height:80px; color:var(--cream); background:var(--ink); font-family:"Avenir Next",sans-serif; font-size:72px; line-height:70px; text-align:center; }
+    .factors { display:grid; grid-template-columns:300px 1fr; gap:28px; align-items:center; margin-top:42px; }
+    .factors .label { font-family:"Avenir Next","PingFang SC",sans-serif; font-size:28px; font-weight:900; }
+    .factor-row { display:flex; gap:12px; }
+    .factor-row span { flex:1; padding:17px 14px 15px; border:3px solid var(--ink); font-size:24px; text-align:center; }
+    .ending { margin:40px 0 0; font-size:33px; line-height:1.45; }
+    .ending strong { color:#c95648; font-weight:400; }
+  </style>
+</head>
+<body>
+  <!-- 叙事角色：结尾循环页。Form 来自 AI 与玩家动作交替接棒的 20-40 秒闭环。 -->
+  <main>
+    <header>
+      <h1>AI 不替玩家解谜。<br>AI 负责让每一次取证都不完全相同。</h1>
+      <div class="badge">CORE LOOP · 20–40 SEC</div>
+    </header>
+
+    <section class="loop" aria-label="核心游戏循环">
+      <article class="step"><small>PLAYER</small><strong>移动<br>探索</strong><p>发现 NPC、障碍与候选青蛙</p></article>
+      <article class="step"><small>PLAYER</small><strong>分配<br>队员</strong><p>按性格与疲劳选择调查者</p></article>
+      <article class="step"><small>AI</small><strong>交谈<br>编码</strong><p>压缩事实，形成性格化记忆</p></article>
+      <article class="step"><small>PLAYER</small><strong>对证<br>复查</strong><p>确认、质疑或修正认知</p></article>
+      <article class="step"><small>AI FEEDBACK</small><strong>更新<br>覆写</strong><p>新信息进入有限记忆槽</p></article>
+      <article class="step"><small>DECISION</small><strong>还原<br>真相</strong><p>找候选青蛙对证并复盘</p></article>
+    </section>
+
+    <div class="factors"><div class="label">每条记忆的变量 →</div><div class="factor-row"><span>性格</span><span>现有记忆</span><span>疲劳度</span><span>交谈对象</span><span>信息来源</span><span>同伴影响</span></div></div>
+    <p class="ending">目标不是穷举全部对话，而是通过合理安排队员，尽可能收集全情报，<strong>还原真相与错误认知的传播路径</strong>。</p>
+  </main>
+</body>
+</html>

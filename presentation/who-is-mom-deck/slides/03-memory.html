@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0">
+  <title>03 · 记忆会更新、覆写与遗忘</title>
+  <link rel="stylesheet" href="../shared/deck.css">
+  <style>
+    main { padding:66px 78px; background:var(--cream); }
+    header { display:flex; justify-content:space-between; align-items:start; }
+    h1 { width:1310px; margin:0; font-family:"Avenir Next","PingFang SC",sans-serif; font-size:78px; font-weight:900; line-height:1.08; }
+    .capacity { display:flex; align-items:baseline; gap:12px; padding:12px 18px; color:var(--cream); background:var(--ink); }
+    .capacity strong { font-family:"Avenir Next",sans-serif; font-size:70px; line-height:.9; }
+    .capacity span { font-size:22px; }
+    .memory-stage { display:grid; grid-template-columns:1.18fr .82fr; gap:38px; margin-top:42px; }
+    .slots { padding:30px; border:7px solid var(--ink); background:var(--white); }
+    .agent-head { display:flex; justify-content:space-between; align-items:center; }
+    .agent-head h2 { margin:0; font-size:39px; font-weight:400; }
+    .agent-head span { font-family:"Avenir Next","PingFang SC",sans-serif; font-size:20px; font-weight:900; }
+    .slot-row { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:24px; }
+    .slot { position:relative; height:284px; padding:23px; border:4px solid var(--ink); }
+    .slot:nth-child(1) { background:var(--cyan); }
+    .slot:nth-child(2) { background:var(--pink); }
+    .slot:nth-child(3) { background:var(--green); }
+    .slot small { font-family:"Avenir Next",sans-serif; font-size:18px; font-weight:900; }
+    .slot p { margin:56px 0 0; font-size:33px; line-height:1.35; }
+    .slot.overwrite p.old { opacity:.38; text-decoration:line-through 5px var(--coral); }
+    .slot.overwrite p.new { position:absolute; left:24px; top:90px; margin:0; color:#a6463b; font-size:43px; transform:rotate(-5deg); }
+    .state-rail { display:grid; grid-template-columns:repeat(4,1fr); margin-top:22px; border:4px solid var(--ink); }
+    .state-rail span { padding:16px 8px; border-right:4px solid var(--ink); font-family:"Avenir Next","PingFang SC",sans-serif; font-size:23px; font-weight:900; text-align:center; }
+    .state-rail span:last-child { border-right:0; }
+    .state-rail span:nth-child(1) { background:var(--cyan); }
+    .state-rail span:nth-child(2) { background:var(--green); }
+    .state-rail span:nth-child(3) { background:var(--coral); }
+    .state-rail span:nth-child(4) { color:var(--cream); background:var(--ink); }
+    .factors { display:flex; flex-direction:column; gap:14px; }
+    .factor { display:grid; grid-template-columns:68px 1fr auto; align-items:center; min-height:76px; padding:0 22px; border:4px solid var(--ink); background:transparent; }
+    .factor b { font-family:"Avenir Next",sans-serif; font-size:31px; }
+    .factor span { font-size:29px; }
+    .factor small { font-size:20px; }
+    .factor:nth-child(1) { background:var(--cyan); }
+    .factor:nth-child(2) { background:var(--yellow); }
+    .factor:nth-child(3) { background:var(--pink); }
+    .factor:nth-child(4) { background:var(--green); }
+    .factor:nth-child(5) { background:var(--coral); }
+    .rule { margin-top:18px; padding:25px 28px; color:var(--cream); background:var(--ink); font-size:29px; line-height:1.42; }
+    .footer { display:grid; grid-template-columns:1fr 520px; gap:38px; align-items:center; margin-top:30px; }
+    .footer p { margin:0; font-size:34px; line-height:1.4; }
+    .footer p strong { color:#c95648; font-weight:400; }
+    .evidence-crop { width:520px; height:164px; object-fit:cover; object-position:88% 8%; border:5px solid var(--ink); filter:saturate(.76); }
+  </style>
+</head>
+<body>
+  <!-- 叙事角色：机制页。Form 来自有限记忆槽的“挤入、改写、退出”过程。 -->
+  <main>
+    <header>
+      <h1>记忆不是数据库，<br>而是一组会<strong style="color:#c95648;font-weight:900">冲突</strong>的有限槽位。</h1>
+      <div class="capacity"><strong>3→5</strong><span>灵感可扩容</span></div>
+    </header>
+
+    <div class="memory-stage">
+      <section class="slots" aria-label="小浪的三格记忆">
+        <div class="agent-head"><h2>小浪 · 冲动型 Agent</h2><span>MEMORY CAPACITY · 03</span></div>
+        <div class="slot-row">
+          <article class="slot"><small>01 · 来源</small><p>乌龟说：<br>妈妈戴着荷叶帽。</p></article>
+          <article class="slot overwrite"><small>02 · 覆写中</small><p class="old">地点：月牙苇湾</p><p class="new">地点：泥滩？</p></article>
+          <article class="slot"><small>03 · 新记忆</small><p>河蟹见过<br>红色围巾。</p></article>
+        </div>
+        <div class="state-rail"><span>新增</span><span>强化</span><span>覆写</span><span>遗忘</span></div>
+      </section>
+
+      <aside class="factors" aria-label="记忆影响因素">
+        <div class="factor"><b>01</b><span>性格</span><small>如何理解</small></div>
+        <div class="factor"><b>02</b><span>现有记忆</span><small>如何关联</small></div>
+        <div class="factor"><b>03</b><span>疲劳度</span><small>是否遗漏</small></div>
+        <div class="factor"><b>04</b><span>交谈对象</span><small>是否退缩</small></div>
+        <div class="factor"><b>05</b><span>同伴对证</span><small>纠错或共识</small></div>
+        <div class="rule">所有关键事实由规则系统锁定；AI 只能在允许的事实边界内压缩和解释。</div>
+      </aside>
+    </div>
+
+    <div class="footer">
+      <p>玩家需要判断的不是“一句话真不真”，而是<strong>谁从谁那里，在什么情况下，记住了这句话</strong>。</p>
+      <img class="evidence-crop" src="../assets/memory-panel.png" alt="游戏中的证据链面板">
+    </div>
+  </main>
+</body>
+</html>

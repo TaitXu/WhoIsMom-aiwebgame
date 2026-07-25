@@ -1,0 +1,62 @@
+@font-face {
+  font-family: "HuiWenMingChao";
+  src: url("../assets/HuiWenMingChao.ttf") format("truetype");
+  font-display: swap;
+}
+
+:root {
+  --ink: #172d2c;
+  --cream: #fff3ce;
+  --cyan: #6ec5d0;
+  --yellow: #f5d35d;
+  --coral: #e77b64;
+  --green: #8cc779;
+  --pink: #df9cb0;
+  --white: #fff9e8;
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  width: 1920px;
+  height: 1080px;
+  margin: 0;
+  overflow: hidden;
+  background: var(--cream);
+}
+
+body {
+  color: var(--ink);
+  font-family: "HuiWenMingChao", "PingFang SC", "Microsoft YaHei", sans-serif;
+  letter-spacing: 0;
+  text-rendering: geometricPrecision;
+}
+
+main {
+  position: relative;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+}
+
+.sans {
+  font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.eyebrow {
+  font-family: "Avenir Next", "PingFang SC", sans-serif;
+  font-size: 23px;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.black-label {
+  display: inline-block;
+  padding: 12px 18px 10px;
+  color: var(--cream);
+  background: var(--ink);
+}
+
+@page { size: 1920px 1080px; margin: 0; }

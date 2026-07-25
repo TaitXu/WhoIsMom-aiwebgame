@@ -211,6 +211,16 @@
 
 .memory-arrow b { color: var(--coral); font-size: 42px; }
 
+.field-screenshot {
+  width: 100%;
+  height: 214px;
+  margin-top: 22px;
+  object-fit: cover;
+  object-position: 82% 8%;
+  border: 3px solid var(--ink);
+  filter: saturate(0.78) contrast(1.02);
+}
+
 .factors {
   display: flex;
   flex-direction: column;
@@ -251,4 +261,3 @@
   font-size: 29px;
   line-height: 1.45;
 }
-

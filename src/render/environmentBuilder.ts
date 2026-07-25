@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { GateId, ObstacleId } from "../core/types";
 import { demoCase } from "../game/case/demoCase";
+import { createCanopyShadow } from "./canopyShadow";
 import type { MaterialPalette } from "./materialPalette";
 import { worldColors } from "./materialPalette";
 
@@ -52,6 +53,8 @@ export function buildEnvironment(palette: MaterialPalette): EnvironmentView {
   addInstancedReeds(group, palette);
   addInstancedPebbles(group, palette);
   const highlights = addWaterHighlights(group, palette);
+  const canopyShadow = createCanopyShadow();
+  group.add(canopyShadow.group);
 
   const obstacles = Object.fromEntries(
     demoCase.obstacles.map((definition) => {
@@ -99,6 +102,7 @@ export function buildEnvironment(palette: MaterialPalette): EnvironmentView {
     colliders,
     update(elapsed) {
       updateWaterHighlights(highlights, elapsed);
+      canopyShadow.update(elapsed);
       Object.values(obstacles).forEach((obstacle, index) => {
         obstacle.rotation.y = Math.sin(elapsed * 0.8 + index) * 0.035;
         const marker = obstacle.userData.marker as THREE.Group | undefined;

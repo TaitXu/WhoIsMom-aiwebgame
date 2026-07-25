@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0">
+  <title>02 · 管理三种认知方式</title>
+  <link rel="stylesheet" href="../shared/deck.css">
+  <style>
+    main { padding:66px 78px 0; color:var(--cream); background:var(--ink); }
+    header { display:flex; justify-content:space-between; align-items:start; }
+    h1 { width:1400px; margin:0; font-family:"Avenir Next","PingFang SC",sans-serif; font-size:78px; font-weight:900; line-height:1.08; }
+    .kicker { margin-top:8px; color:var(--yellow); }
+    .cast { display:grid; grid-template-columns:repeat(3,1fr); height:486px; margin-top:44px; border:7px solid var(--cream); }
+    .agent { position:relative; padding:32px 34px 28px; color:var(--ink); border-right:7px solid var(--cream); }
+    .agent:last-child { border-right:0; }
+    .agent.modian { background:var(--cyan); }
+    .agent.xiaolang { background:var(--yellow); }
+    .agent.paopao { background:var(--pink); }
+    .agent .num { position:absolute; right:28px; top:24px; font-family:"Avenir Next",sans-serif; font-size:88px; font-weight:900; opacity:.22; }
+    .agent small { font-family:"Avenir Next",sans-serif; font-size:20px; font-weight:900; }
+    .agent h2 { margin:20px 0 3px; font-size:67px; font-weight:400; line-height:1; }
+    .agent .trait { margin:0; font-family:"Avenir Next","PingFang SC",sans-serif; font-size:26px; font-weight:800; }
+    .agent dl { display:grid; grid-template-columns:95px 1fr; gap:13px 16px; margin:54px 0 0; font-size:26px; line-height:1.35; }
+    .agent dt { font-family:"Avenir Next","PingFang SC",sans-serif; font-weight:900; }
+    .agent dd { margin:0; }
+    .band { position:absolute; left:0; right:0; bottom:0; height:308px; overflow:hidden; }
+    .band img { width:100%; height:100%; object-fit:cover; object-position:50% 56%; filter:saturate(.8) brightness(.66); }
+    .band::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,rgba(23,45,44,.95),rgba(23,45,44,.58) 55%,rgba(23,45,44,.86)); }
+    .generation { position:absolute; z-index:2; left:80px; top:54px; width:1680px; display:grid; grid-template-columns:310px 1fr 310px 1fr; gap:18px 24px; align-items:center; }
+    .generation b { color:var(--yellow); font-family:"Avenir Next","PingFang SC",sans-serif; font-size:28px; }
+    .generation p { margin:0; color:var(--cream); font-size:28px; line-height:1.35; }
+    .thesis { position:absolute; z-index:2; left:80px; bottom:38px; width:1660px; margin:0; color:var(--cream); font-size:35px; line-height:1.35; }
+    .thesis strong { color:var(--coral); font-weight:400; }
+  </style>
+</head>
+<body>
+  <!-- 叙事角色：角色页。Form 来自三个 Agent 的可预测优势与风险，而不是人物设定卡。 -->
+  <main>
+    <header>
+      <h1>你管理的不是三个单位，<br>而是三种<strong style="color:var(--coral);font-weight:900">理解世界</strong>的方式。</h1>
+      <div class="eyebrow kicker">SQUAD · PERSONALITY · RISK</div>
+    </header>
+
+    <section class="cast" aria-label="三只蝌蚪 Agent">
+      <article class="agent modian">
+        <span class="num">01</span><small>CAUTIOUS / LITERAL</small><h2>墨点</h2><p class="trait">谨慎 · 照实复述</p>
+        <dl><dt>优势</dt><dd>保留地点、来源与限定词</dd><dt>风险</dt><dd>面对强势 NPC 会退缩</dd><dt>适合</dt><dd>核对关键证词</dd></dl>
+      </article>
+      <article class="agent xiaolang">
+        <span class="num">02</span><small>IMPULSIVE / FAST</small><h2>小浪</h2><p class="trait">冲动 · 行动迅速</p>
+        <dl><dt>优势</dt><dd>抢到短暂信息，探索效率高</dd><dt>风险</dt><dd>省略语境，新记忆覆盖旧信息</dd><dt>适合</dt><dd>快速侦察与开路</dd></dl>
+      </article>
+      <article class="agent paopao">
+        <span class="num">03</span><small>SOCIAL / AGREEABLE</small><h2>泡泡</h2><p class="trait">亲和 · 善于追问</p>
+        <dl><dt>优势</dt><dd>让 NPC 多说，也容易组织交流</dd><dt>风险</dt><dd>会把同伴的确信当成事实</dd><dt>适合</dt><dd>补背景与同伴对证</dd></dl>
+      </article>
+    </section>
+
+    <section class="band" aria-label="AI 生成与规则边界">
+      <img src="../assets/game-scene.png" alt="小队实机画面">
+      <div class="generation">
+        <b>AI GENERATES</b><p>蝌蚪的性格化表达、行动倾向与候选青蛙外观</p>
+        <b>RULES KEEP</b><p>妈妈身份、关键事实与可验证路径始终确定</p>
+      </div>
+      <p class="thesis">同一条证词落到不同队员手里，会变成不同的记忆。玩家要做的是<strong>合理分配谁去做什么</strong>。</p>
+    </section>
+  </main>
+</body>
+</html>

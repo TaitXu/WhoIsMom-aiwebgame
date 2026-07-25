@@ -55,14 +55,14 @@
   position: absolute;
   left: 104px;
   top: 190px;
-  width: 1320px;
+  width: 1540px;
 }
 
 .ripple-title h1 {
   margin: 0;
-  font-size: 164px;
+  font-size: 130px;
   font-weight: 400;
-  line-height: 1;
+  line-height: 1.06;
 }
 
 .ripple-title h1 em {
@@ -72,7 +72,7 @@
 
 .ripple-title .statement {
   width: 920px;
-  margin: 40px 0 0;
+  margin: 32px 0 0;
   font-size: 39px;
   line-height: 1.55;
 }
@@ -85,8 +85,8 @@
   transform: rotate(-5deg);
 }
 
-.ghost-memory.one { left: 670px; top: 510px; }
-.ghost-memory.two { left: 910px; top: 610px; color: rgba(216, 103, 82, 0.2); transform: rotate(3deg); }
+.ghost-memory.one { left: 930px; top: 510px; }
+.ghost-memory.two { left: 1180px; top: 610px; color: rgba(216, 103, 82, 0.2); transform: rotate(3deg); }
 
 .ripple-mechanism {
   color: var(--ink);
@@ -211,4 +211,3 @@
   font-size: 31px;
   line-height: 1.45;
 }
-

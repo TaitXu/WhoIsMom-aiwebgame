@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0">
+  <title>01 · 小蝌蚪找妈妈</title>
+  <link rel="stylesheet" href="../shared/deck.css">
+  <style>
+    main { background: var(--yellow); }
+    .scene { position:absolute; right:0; top:0; width:59%; height:100%; object-fit:cover; filter:saturate(1.12) contrast(1.04); }
+    .wedge { position:absolute; z-index:2; inset:0 auto 0 0; width:59%; background:var(--yellow); clip-path:polygon(0 0,100% 0,82% 100%,0 100%); }
+    .copy { position:absolute; z-index:3; left:96px; top:76px; width:850px; }
+    h1 { margin:58px 0 20px; font-family:"Avenir Next","PingFang SC",sans-serif; font-size:146px; font-weight:900; line-height:.93; }
+    h1 span { display:block; color:#c95648; }
+    .summary { width:735px; margin:0; font-size:39px; line-height:1.42; }
+    .stat { position:absolute; z-index:4; left:98px; bottom:66px; display:flex; align-items:baseline; gap:22px; }
+    .stat strong { font-family:"Avenir Next",sans-serif; font-size:108px; line-height:.8; }
+    .stat span { font-size:30px; font-weight:700; }
+    .sticker { position:absolute; z-index:4; right:72px; top:64px; width:212px; height:212px; display:grid; place-items:center; color:var(--cream); background:var(--coral); border:8px solid var(--ink); border-radius:50%; font-family:"Avenir Next",sans-serif; font-size:31px; font-weight:900; line-height:1.2; text-align:center; transform:rotate(8deg); }
+    .story { position:absolute; z-index:4; right:74px; bottom:48px; width:650px; padding:20px 24px; color:var(--cream); background:rgba(23,45,44,.92); font-size:26px; line-height:1.4; }
+  </style>
+</head>
+<body>
+  <!-- 叙事角色：hero。Form 来自“带队、取证、找妈妈”三个玩家动词。 -->
+  <main>
+    <img class="scene" src="../assets/game-scene.png" alt="三只蝌蚪跟随领路小鱼探索水乡">
+    <div class="wedge"></div>
+    <div class="copy">
+      <div class="eyebrow black-label">AI-NATIVE SQUAD ADVENTURE</div>
+      <h1>带队。<span>取证。</span>找妈妈。</h1>
+      <p class="summary">一款把 Agent 的性格、疲劳与有限记忆，真正做成策略资源的冒险解谜游戏。</p>
+    </div>
+    <div class="stat"><strong>3×</strong><span>性格不同的蝌蚪 Agent</span></div>
+    <div class="sticker">WHO<br>IS MOM?</div>
+    <div class="story">故事原型：一群与妈妈失散的小蝌蚪，沿着九区域水乡追索零散证词，辨认三只候选青蛙。</div>
+  </main>
+</body>
+</html>
