@@ -1,4 +1,5 @@
 import type { AgentId, AgentState, GameState, Personality } from "../../core/types";
+import { communicationStyleByPersonality } from "../agents/personality";
 
 const agentDefinitions: Array<{
   id: AgentId;
@@ -15,6 +16,7 @@ function createAgentState(id: AgentId, name: string, personality: Personality): 
     id,
     name,
     personality,
+    communicationStyle: communicationStyleByPersonality[personality],
     mode: "following",
     memories: [null, null, null],
     memoryCapacity: 3,
@@ -38,9 +40,11 @@ export function createInitialGameState(): GameState {
     clearedObstacleIds: [],
     scoutedGateIds: [],
     atRestSpot: true,
+    candidateFrogsRevealed: false,
     agents,
     objective: "从孵化静池出发，认识这片相连的水乡",
     evidenceLog: [],
     revision: 0,
+    selectedAgentIds: [],
   };
 }

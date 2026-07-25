@@ -1,8 +1,8 @@
 import * as THREE from "three";
-import type { AgentId, FrogId, NpcId, Personality } from "../core/types";
+import type { AgentId, FrogFeatures, FrogId, NpcId, Personality } from "../core/types";
 import type { CandidateFrog } from "../game/case/caseTypes";
 import { agentMarkerColors, getPersonalityMotion } from "../game/agents/personality";
-import { createCharacterView, type CharacterView } from "./characterView";
+import { createCharacterView, type CharacterView, type FrogCharacterView } from "./characterView";
 import type { MaterialPalette } from "./materialPalette";
 import { worldColors } from "./materialPalette";
 
@@ -10,15 +10,40 @@ export function createPlayerFish(palette: MaterialPalette): CharacterView {
   const group = createRoot("player-fish", "player");
   const model = new THREE.Group();
   group.add(model);
-  const body = mesh(model, faceted(new THREE.SphereGeometry(0.62, 9, 6)), palette.toon(worldColors.player), [0, 0.42, 0], [0.9, 0.5, 1.25], palette, 0.045);
-  mesh(model, faceted(new THREE.SphereGeometry(0.42, 8, 5)), palette.toon(0xb5df7a), [0, 0.21, -0.18], [0.74, 0.28, 0.95]);
+  const yellow = palette.toon(0xf2bd32);
+  const belly = palette.toon(0xf4ead2);
+  const darkYellow = palette.toon(0xc89427);
+  const body = mesh(model, faceted(new THREE.SphereGeometry(0.68, 9, 6)), yellow, [0, 0.48, 0], [1.02, 0.82, 1.35], palette, 0.045);
+  mesh(model, faceted(new THREE.SphereGeometry(0.49, 8, 5)), belly, [0, 0.31, -0.5], [0.86, 0.63, 0.52], palette, 0.03);
+
+  // Oversized eyes and a small puckered mouth give the leader the friendly pufferfish silhouette.
+  addEyes(model, palette, 0.38, 0.72, -0.58, 0.16);
+  mesh(model, faceted(new THREE.TorusGeometry(0.14, 0.07, 5, 8)), darkYellow, [0, 0.48, -0.72], [1, 0.8, 0.7], palette, 0.025).rotation.x = Math.PI / 2;
+
+  // Side, dorsal and ventral fins.
+  [-1, 1].forEach((side) => {
+    const fin = mesh(model, new THREE.ConeGeometry(0.25, 0.52, 5), yellow, [side * 0.72, 0.45, -0.02], [1, 0.72, 1.25], palette, 0.03);
+    fin.rotation.z = side * 1.18;
+    fin.rotation.x = 0.35;
+  });
+  const dorsal = mesh(model, new THREE.ConeGeometry(0.2, 0.48, 5), yellow, [0, 1.08, 0.15], [1.3, 0.8, 0.9], palette, 0.03);
+  dorsal.rotation.z = -0.12;
+  const ventral = mesh(model, new THREE.ConeGeometry(0.17, 0.4, 5), yellow, [0, -0.05, 0.12], [1.3, 0.7, 0.85], palette, 0.03);
+  ventral.rotation.z = Math.PI;
+
   const tail = new THREE.Group();
-  tail.position.set(0, 0.38, 0.68);
-  mesh(tail, new THREE.ConeGeometry(0.44, 0.9, 4), palette.toon(0x329e69), [0, 0, 0.38], [1, 1, 1], palette, 0.035).rotation.x = Math.PI / 2;
+  tail.position.set(0, 0.48, 0.92);
+  const tailFin = mesh(tail, new THREE.ConeGeometry(0.4, 0.78, 5), darkYellow, [0, 0, 0.36], [1.15, 0.8, 1], palette, 0.035);
+  tailFin.rotation.x = Math.PI / 2;
   model.add(tail);
-  addEyes(model, palette, 0.35, 0.52, -0.52, 0.15);
-  addFakeShadow(group, palette, 0.64);
-  return createCharacterView({ group, motionRoot: model, tail, body, tailAmplitude: 0.28, tailFrequency: 5.8, bobAmplitude: 0.05 });
+
+  // Low-poly spots match the reference and help distinguish the leader at a distance.
+  const spots: readonly (readonly [number, number, number])[] = [[-0.42, 0.75, -0.1], [0.4, 0.72, -0.05], [-0.5, 0.56, 0.35], [0.32, 0.55, 0.42]];
+  spots.forEach(([x, y, z]) => {
+    mesh(model, new THREE.CircleGeometry(0.09, 6), darkYellow, [x, y, z], [1.1, 1, 1]);
+  });
+  addFakeShadow(group, palette, 0.78);
+  return createCharacterView({ group, motionRoot: model, tail, body, tailAmplitude: 0.16, tailFrequency: 4.2, bobAmplitude: 0.045 });
 }
 
 export function createTadpole(id: AgentId, personality: Personality, palette: MaterialPalette, phase: number): CharacterView {
@@ -26,12 +51,15 @@ export function createTadpole(id: AgentId, personality: Personality, palette: Ma
   const group = createRoot(`agent-${id}`, "agent", id);
   const model = new THREE.Group();
   group.add(model);
-  const body = mesh(model, faceted(new THREE.SphereGeometry(0.34, 8, 5)), palette.toon(worldColors.tadpole), [0, 0.28, 0], [0.88, 0.64, 1.05], palette, 0.045);
+  const body = mesh(model, faceted(new THREE.SphereGeometry(0.43, 8, 5)), palette.toon(0x25282c), [0, 0.38, -0.12], [1.05, 0.92, 1.05], palette, 0.045);
+  mesh(model, faceted(new THREE.SphereGeometry(0.11, 7, 4)), palette.toon(0x777b80), [0.28, 0.32, -0.48], [1.2, 0.7, 0.55]);
   const tail = new THREE.Group();
-  tail.position.set(0, 0.27, 0.32);
-  mesh(tail, new THREE.ConeGeometry(0.19, 0.78, 4), palette.toon(worldColors.tadpole), [0, 0, 0.33], [1, 1, 1], palette, 0.035).rotation.x = Math.PI / 2;
+  tail.position.set(0, 0.38, 0.28);
+  const tailFin = mesh(tail, new THREE.ConeGeometry(0.19, 1.05, 4), palette.toon(0x41464b), [0, 0, 0.5], [1.15, 0.58, 1], palette, 0.035);
+  tailFin.rotation.x = Math.PI / 2;
   model.add(tail);
-  addEyes(model, palette, 0.19, 0.35, -0.28, 0.09);
+  addEyes(model, palette, 0.22, 0.52, -0.52, 0.1);
+  mesh(model, new THREE.SphereGeometry(0.095, 7, 4), palette.toon(0xf28b91), [0, 0.35, -0.59], [1.35, 0.55, 0.6], palette, 0.02);
   addLeafMarker(model, palette, agentMarkerColors[id]);
   addFakeShadow(group, palette, 0.36);
 
@@ -78,30 +106,72 @@ export function createNpc(id: NpcId, palette: MaterialPalette): CharacterView {
   return createCrab(palette);
 }
 
-export function createFrog(definition: CandidateFrog, palette: MaterialPalette): CharacterView {
+export function createFrog(definition: CandidateFrog, palette: MaterialPalette): FrogCharacterView {
   const group = createRoot(`frog-${definition.id}`, "frog", definition.id satisfies FrogId);
   const model = new THREE.Group();
   group.add(model);
-  const bodyScale = definition.id === "bullfrog" ? 1.22 : definition.id === "tree-frog" ? 0.9 : 1;
-  const body = mesh(model, faceted(new THREE.SphereGeometry(0.7, 9, 6)), palette.toon(definition.bodyColor), [0, 0.68 * bodyScale, 0], [1.05 * bodyScale, 0.72 * bodyScale, 1.02 * bodyScale], palette, 0.055);
-  mesh(model, faceted(new THREE.SphereGeometry(0.48, 8, 5)), palette.toon(definition.bellyColor), [0, 0.58 * bodyScale, -0.56 * bodyScale], [0.78 * bodyScale, 0.46 * bodyScale, 0.3 * bodyScale]);
-  const legGeometry = new THREE.CylinderGeometry(0.1, 0.15, 0.9, 5);
-  [-1, 1].forEach((side) => {
-    const leg = mesh(model, legGeometry, palette.toon(definition.accentColor), [side * 0.7 * bodyScale, 0.28, 0.2], [1, definition.id === "marsh-frog" ? 1.2 : 0.95, 1], palette, 0.035);
-    leg.rotation.z = side * 1.08;
-    leg.rotation.x = 0.12;
-    mesh(model, faceted(new THREE.SphereGeometry(0.18, 7, 4)), palette.toon(definition.accentColor), [side * 1.02 * bodyScale, 0.09, 0.14], [1.35, 0.45, 0.7]);
-  });
-  addEyes(model, palette, 0.34 * bodyScale, 1.08 * bodyScale, -0.42 * bodyScale, 0.16 * bodyScale);
-  if (definition.accessory === "leaf-hat") addLeafHat(model, palette, bodyScale);
-  else addScarf(model, palette, definition.accentColor, bodyScale);
-  addFakeShadow(group, palette, 0.84 * bodyScale);
-  const interactionRing = createInteractionRing(palette, definition.accentColor, 0.94 * bodyScale);
+  const bodyMaterial = palette.toon(0x65884b).clone();
+  const bellyMaterial = palette.toon(0xe8c85f).clone();
+  const irisMaterial = palette.basic(0xd58a35).clone();
+  const redMaterial = palette.toon(0xd94f55).clone();
+  const body = mesh(model, faceted(new THREE.SphereGeometry(0.74, 9, 6)), bodyMaterial, [0, 0.72, 0.02], [1.22, 0.72, 1.16], palette, 0.055);
+  mesh(model, faceted(new THREE.SphereGeometry(0.51, 8, 5)), bellyMaterial, [0, 0.58, -0.54], [0.94, 0.5, 0.42], palette, 0.03);
+  addFrogEyes(model, palette, 0.37, 1.14, -0.5, 0.19, irisMaterial);
+  const hindLegs = addSharedFrogLegs(model, palette, bodyMaterial);
+  const markingGroups = addFrogMarkingGroups(model, palette);
+  const headGroups = {
+    "leaf-hat": addLeafHat(model, palette),
+    "reed-crown": addReedCrown(model, palette),
+  };
+  const redAdornmentGroups = {
+    "ankle-ribbons": addAnkleRibbons(model, palette, redMaterial),
+    scarf: addScarf(model, palette, redMaterial),
+    "flower-pin": addFlowerPin(model, palette, redMaterial),
+  };
+  addFakeShadow(group, palette, 0.84);
+  const interactionRing = createInteractionRing(palette, 0xd94f55, 0.94);
   group.add(interactionRing);
   const tail = new THREE.Group();
   model.add(tail);
-  return createCharacterView({ group, motionRoot: model, tail, body, interactionRing, tailAmplitude: 0.04, tailFrequency: 2, bobAmplitude: 0.03, phase: definition.id === "tree-frog" ? 0 : definition.id === "bullfrog" ? 1.4 : 2.8 });
+  const view = createCharacterView({ group, motionRoot: model, tail, body, interactionRing, tailAmplitude: 0.04, tailFrequency: 2, bobAmplitude: 0.03, phase: definition.id === "tree-frog" ? 0 : definition.id === "bullfrog" ? 1.4 : 2.8 });
+
+  function applyAppearance(features: FrogFeatures): void {
+    bodyMaterial.color.setHex(frogBodyColors[features.bodyTone]);
+    bellyMaterial.color.setHex(frogBellyColors[features.bellyTone]);
+    irisMaterial.color.setHex(frogEyeColors[features.eyeTone]);
+    Object.entries(markingGroups).forEach(([key, markingGroup]) => {
+      markingGroup.visible = key === features.markingPattern;
+    });
+    Object.entries(headGroups).forEach(([key, adornmentGroup]) => {
+      adornmentGroup.visible = key === features.headAdornment;
+    });
+    Object.entries(redAdornmentGroups).forEach(([key, adornmentGroup]) => {
+      adornmentGroup.visible = key === features.redAdornment;
+    });
+    const sturdy = features.hindLegShape === "sturdy";
+    hindLegs.scale.set(sturdy ? 1.14 : 0.94, sturdy ? 1.08 : 1, sturdy ? 1.08 : 1.02);
+    group.userData.frogFeatures = { ...features };
+  }
+
+  applyAppearance(definition.features);
+  return { ...view, applyAppearance };
 }
+
+const frogBodyColors: Record<FrogFeatures["bodyTone"], number> = {
+  "blue-green": 0x55b8a4,
+  "olive-green": 0x6f9255,
+  "olive-brown": 0x7f7d4d,
+};
+
+const frogBellyColors: Record<FrogFeatures["bellyTone"], number> = {
+  cream: 0xf4ead2,
+  "warm-yellow": 0xe8c85f,
+};
+
+const frogEyeColors: Record<FrogFeatures["eyeTone"], number> = {
+  "red-brown": 0xad4f3d,
+  amber: 0xd99c34,
+};
 
 function createDragonfly(palette: MaterialPalette): CharacterView {
   const group = createRoot("npc-dragonfly", "npc", "dragonfly");
@@ -115,6 +185,7 @@ function createDragonfly(palette: MaterialPalette): CharacterView {
   [-1, 1].forEach((side) => {
     const wing = mesh(tail, new THREE.CircleGeometry(0.36, 6), wingMaterial, [side * 0.4, 0, 0], [1.7, 0.5, 1]);
     wing.rotation.x = -Math.PI / 2;
+    wing.renderOrder = 1;
   });
   model.add(tail);
   addEyes(model, palette, 0.12, 0.91, -0.38, 0.07);
@@ -198,6 +269,9 @@ function mesh(
   if (palette && outlineWidth) {
     const outline = new THREE.Mesh(geometry, palette.outline(outlineWidth));
     outline.raycast = () => undefined;
+    // Draw the expanded back-face shell before the opaque surface so animated
+    // transforms cannot make the outline and body compete at the same depth.
+    outline.renderOrder = -1;
     result.add(outline);
   }
   return result;
@@ -226,23 +300,132 @@ function addEyes(group: THREE.Group, palette: MaterialPalette, x: number, y: num
   });
 }
 
+function addFrogEyes(
+  group: THREE.Group,
+  palette: MaterialPalette,
+  x: number,
+  y: number,
+  z: number,
+  radius: number,
+  iris: THREE.Material,
+): void {
+  const pupil = palette.basic(worldColors.ink);
+  [-1, 1].forEach((side) => {
+    const eye = mesh(group, faceted(new THREE.SphereGeometry(radius, 8, 5)), iris, [side * x, y, z], [1, 1, 1], palette, radius * 0.2);
+    mesh(eye, faceted(new THREE.SphereGeometry(radius * 0.48, 7, 4)), pupil, [0, 0, -radius * 0.78]);
+  });
+}
+
+function addSharedFrogLegs(group: THREE.Group, palette: MaterialPalette, legMaterial: THREE.Material): THREE.Group {
+  const hindLegs = new THREE.Group();
+  group.add(hindLegs);
+  const toeMaterial = palette.toon(0xcaa45d);
+  [-1, 1].forEach((side) => {
+    const front = mesh(group, new THREE.CylinderGeometry(0.1, 0.16, 0.92, 5), legMaterial, [side * 0.7, 0.3, 0.12], [1, 1, 1], palette, 0.03);
+    front.rotation.z = side * 0.78;
+    front.rotation.x = 0.12;
+    const thigh = mesh(hindLegs, faceted(new THREE.SphereGeometry(0.26, 7, 4)), legMaterial, [side * 0.78, 0.42, 0.4], [1.3, 0.8, 1.25], palette, 0.03);
+    thigh.rotation.z = side * 0.3;
+    const rear = mesh(hindLegs, new THREE.CylinderGeometry(0.13, 0.2, 1.08, 5), legMaterial, [side * 0.78, 0.22, 0.58], [1, 1, 1], palette, 0.03);
+    rear.rotation.z = side * 0.92;
+    rear.rotation.x = -0.18;
+    [-1, 0, 1].forEach((toe) => {
+      const foot = mesh(hindLegs, new THREE.ConeGeometry(0.09, 0.34, 4), toeMaterial, [side * (0.88 + toe * 0.14), 0.08, 0.16 + Math.abs(toe) * 0.1], [1, 0.65, 1], palette, 0.02);
+      foot.rotation.x = Math.PI / 2;
+      foot.rotation.z = side * (0.22 + toe * 0.18);
+    });
+  });
+  return hindLegs;
+}
+
+function addFrogMarkingGroups(
+  group: THREE.Group,
+  palette: MaterialPalette,
+): Record<FrogFeatures["markingPattern"], THREE.Group> {
+  const sparse = new THREE.Group();
+  const dense = new THREE.Group();
+  group.add(sparse, dense);
+  const sparseMaterial = palette.toon(0x315f4c);
+  const denseMaterial = palette.toon(0xd6d889);
+  const sparseSpots: readonly (readonly [number, number, number, number])[] = [
+    [-0.55, 0.83, -0.22, 0.11], [0.54, 0.8, -0.1, 0.1], [-0.34, 0.68, 0.38, 0.09],
+  ];
+  const denseSpots: readonly (readonly [number, number, number, number])[] = [
+    [-0.58, 0.88, -0.22, 0.08], [-0.3, 0.96, -0.38, 0.07], [0.08, 0.91, -0.48, 0.08],
+    [0.43, 0.88, -0.31, 0.075], [0.57, 0.72, -0.05, 0.08], [-0.46, 0.65, 0.25, 0.075],
+    [0.2, 0.66, 0.43, 0.07],
+  ];
+  sparseSpots.forEach(([x, y, z, radius]) => {
+    mesh(sparse, new THREE.CircleGeometry(radius, 6), sparseMaterial, [x, y, z], [1.15, 1, 1]);
+  });
+  denseSpots.forEach(([x, y, z, radius]) => {
+    mesh(dense, new THREE.CircleGeometry(radius, 6), denseMaterial, [x, y, z], [1.1, 1, 1]);
+  });
+  return { "sparse-dark": sparse, "dense-light": dense };
+}
+
 function addLeafMarker(group: THREE.Group, palette: MaterialPalette, color: number): void {
   const leaf = mesh(group, new THREE.CircleGeometry(0.13, 5), palette.toon(color), [0.09, 0.6, -0.02]);
   leaf.rotation.set(-Math.PI / 2, 0.45, 0.2);
 }
 
-function addLeafHat(group: THREE.Group, palette: MaterialPalette, scale: number): void {
-  const hat = mesh(group, faceted(new THREE.ConeGeometry(0.52 * scale, 0.18 * scale, 7)), palette.toon(0x3d9360), [0.06 * scale, 1.3 * scale, 0.02], [1, 1, 1], palette, 0.04);
+function addLeafHat(group: THREE.Group, palette: MaterialPalette): THREE.Group {
+  const featureGroup = new THREE.Group();
+  group.add(featureGroup);
+  const hat = mesh(featureGroup, faceted(new THREE.ConeGeometry(0.52, 0.18, 7)), palette.toon(0x3d9360), [0.06, 1.3, 0.02], [1, 1, 1], palette, 0.04);
   hat.rotation.z = -0.12;
-  const stem = mesh(group, new THREE.CylinderGeometry(0.025, 0.035, 0.34 * scale, 5), palette.toon(0x315f4c), [0.12 * scale, 1.49 * scale, 0.02]);
+  const stem = mesh(featureGroup, new THREE.CylinderGeometry(0.025, 0.035, 0.34, 5), palette.toon(0x315f4c), [0.12, 1.49, 0.02]);
   stem.rotation.z = -0.35;
+  return featureGroup;
 }
 
-function addScarf(group: THREE.Group, palette: MaterialPalette, color: number, scale: number): void {
-  const scarf = mesh(group, new THREE.TorusGeometry(0.48 * scale, 0.09 * scale, 5, 10), palette.toon(color), [0, 0.82 * scale, -0.06]);
+function addReedCrown(group: THREE.Group, palette: MaterialPalette): THREE.Group {
+  const featureGroup = new THREE.Group();
+  group.add(featureGroup);
+  const reedMaterial = palette.toon(0xb9a54c);
+  [-2, -1, 0, 1, 2].forEach((offset) => {
+    const height = 0.34 + (2 - Math.abs(offset)) * 0.055;
+    const reed = mesh(featureGroup, new THREE.CylinderGeometry(0.025, 0.04, height, 5), reedMaterial, [offset * 0.14, 1.38 + height / 2, 0.02]);
+    reed.rotation.z = offset * -0.1;
+    mesh(featureGroup, new THREE.SphereGeometry(0.045, 6, 4), palette.toon(0x7f7040), [offset * 0.14 + offset * 0.015, 1.38 + height, 0.02]);
+  });
+  return featureGroup;
+}
+
+function addScarf(group: THREE.Group, palette: MaterialPalette, material: THREE.Material): THREE.Group {
+  const featureGroup = new THREE.Group();
+  group.add(featureGroup);
+  const scarf = mesh(featureGroup, new THREE.TorusGeometry(0.48, 0.09, 5, 10), material, [0, 0.82, -0.06]);
   scarf.rotation.x = Math.PI / 2;
-  const end = mesh(group, new THREE.BoxGeometry(0.16 * scale, 0.48 * scale, 0.07), palette.toon(color), [0.35 * scale, 0.5 * scale, 0.35]);
+  const end = mesh(featureGroup, new THREE.BoxGeometry(0.16, 0.48, 0.07), material, [0.35, 0.5, 0.35], [1, 1, 1], palette, 0.025);
   end.rotation.z = -0.18;
+  return featureGroup;
+}
+
+function addAnkleRibbons(group: THREE.Group, palette: MaterialPalette, material: THREE.Material): THREE.Group {
+  const featureGroup = new THREE.Group();
+  group.add(featureGroup);
+  [-1, 1].forEach((side) => {
+    const ribbon = mesh(featureGroup, new THREE.TorusGeometry(0.16, 0.045, 5, 9), material, [side * 0.92, 0.16, 0.5], [1, 0.78, 1], palette, 0.018);
+    ribbon.rotation.x = Math.PI / 2;
+    const tail = mesh(featureGroup, new THREE.BoxGeometry(0.08, 0.28, 0.045), material, [side * 0.84, 0.04, 0.52], [1, 1, 1], palette, 0.018);
+    tail.rotation.z = side * 0.24;
+  });
+  return featureGroup;
+}
+
+function addFlowerPin(group: THREE.Group, palette: MaterialPalette, material: THREE.Material): THREE.Group {
+  const featureGroup = new THREE.Group();
+  group.add(featureGroup);
+  const flower = new THREE.Group();
+  flower.position.set(0.52, 1.03, -0.54);
+  featureGroup.add(flower);
+  for (let index = 0; index < 5; index += 1) {
+    const angle = (index / 5) * Math.PI * 2;
+    mesh(flower, new THREE.CircleGeometry(0.11, 6), material, [Math.cos(angle) * 0.1, Math.sin(angle) * 0.1, 0], [1, 1, 1], palette, 0.018);
+  }
+  mesh(flower, new THREE.CircleGeometry(0.07, 7), palette.toon(0xf1c94b), [0, 0, -0.006]);
+  return featureGroup;
 }
 
 function addFakeShadow(group: THREE.Group, palette: MaterialPalette, radius: number): void {

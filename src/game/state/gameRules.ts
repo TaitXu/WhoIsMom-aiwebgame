@@ -1,5 +1,6 @@
 import type { AgentId, GameCommand, GameState, Memory, ObstacleId } from "../../core/types";
 import { assertNever } from "../../core/assert";
+import { communicationStyleByPersonality } from "../agents/personality";
 import { createInitialGameState } from "./gameState";
 
 const MAX_FATIGUE = 100;
@@ -7,7 +8,17 @@ const MAX_FATIGUE = 100;
 export function reduceGameState(state: GameState, command: GameCommand): GameState {
   switch (command.type) {
     case "SELECT_AGENT":
-      return bump(state, { selectedAgentId: command.agentId });
+      return bump(state, {
+        selectedAgentId: command.agentId,
+        selectedAgentIds: command.agentId ? [command.agentId] : [],
+      });
+    case "SELECT_AGENTS": {
+      const agentIds = [...new Set(command.agentIds)].filter((id) => Boolean(state.agents[id]));
+      return bump(state, {
+        selectedAgentId: agentIds[0],
+        selectedAgentIds: agentIds,
+      });
+    }
     case "UPDATE_WORLD_CONTEXT": {
       const discoveredRegionIds = state.discoveredRegionIds.includes(command.regionId)
         ? state.discoveredRegionIds
@@ -45,6 +56,36 @@ export function reduceGameState(state: GameState, command: GameCommand): GameSta
         activeTask: command.task,
       }));
     }
+    case "START_GATE_SCOUT": {
+      const agent = state.agents[command.agentId];
+      if (
+        state.phase !== "explore" ||
+        command.gateId !== "dragonfly-gap" ||
+        command.task.viaGateId !== command.gateId ||
+        command.task.npcId !== "dragonfly" ||
+        agent.mode !== "following" ||
+        agent.fatigue >= 90 ||
+        agent.jumpKnowledge !== "learned"
+      ) return state;
+      return updateAgent(state, command.agentId, (current) => ({
+        ...current,
+        mode: "jumping",
+        activeTask: command.task,
+        returnGateId: undefined,
+      }));
+    }
+    case "FINISH_GATE_JUMP":
+      return updateTaskAgent(state, command.agentId, command.taskId, (agent) =>
+        agent.mode === "jumping" && agent.activeTask?.type === "investigation" && agent.activeTask.viaGateId
+          ? { ...agent, mode: "considering" }
+          : agent,
+      );
+    case "RESUME_INVESTIGATION":
+      return updateTaskAgent(state, command.agentId, command.taskId, (agent) =>
+        agent.mode === "considering" && agent.activeTask?.type === "investigation" && agent.activeTask.viaGateId
+          ? { ...agent, mode: "approaching" }
+          : agent,
+      );
     case "BEGIN_INTERACTION":
       return updateTaskAgent(state, command.agentId, command.taskId, (agent) => ({
         ...agent,
@@ -55,6 +96,7 @@ export function reduceGameState(state: GameState, command: GameCommand): GameSta
       const agent = state.agents[command.agentId];
       if (agent.activeTask?.id !== command.taskId || agent.activeTask.type !== "investigation" || agent.mode !== "interacting") return state;
       const memories = [...agent.memories];
+      const returnGateId = agent.activeTask.viaGateId;
       while (memories.length < agent.memoryCapacity) memories.push(null);
       memories[command.slot] = command.memory;
       return bump(state, {
@@ -64,12 +106,38 @@ export function reduceGameState(state: GameState, command: GameCommand): GameSta
             ...agent,
             mode: "returning",
             activeTask: undefined,
+            returnGateId,
             memories,
             fatigue: clampFatigue(agent.fatigue + command.fatigue),
           },
         },
         evidenceLog: [...state.evidenceLog, command.evidence],
         objective: `${agent.name}带回了一条${command.memory.topic === "jump" ? "跳跃方法" : "新记忆"}`,
+      });
+    }
+    case "FAIL_INVESTIGATION": {
+      if (state.phase !== "explore") return state;
+      const agent = state.agents[command.agentId];
+      if (agent.activeTask?.id !== command.taskId || agent.activeTask.type !== "investigation" || agent.mode !== "interacting") return state;
+      const memories = [...agent.memories];
+      if (command.forgetMemoryId) {
+        const memoryIndex = memories.findIndex((memory) => memory?.id === command.forgetMemoryId);
+        if (memoryIndex >= 0) memories[memoryIndex] = null;
+      }
+      return bump(state, {
+        agents: {
+          ...state.agents,
+          [command.agentId]: {
+            ...agent,
+            mode: "returning",
+            activeTask: undefined,
+            returnGateId: agent.activeTask.viaGateId,
+            memories,
+            fatigue: clampFatigue(agent.fatigue + command.fatigue),
+          },
+        },
+        evidenceLog: [...state.evidenceLog, command.evidence],
+        objective: command.evidence.summary,
       });
     }
     case "START_CLEANUP": {
@@ -175,9 +243,66 @@ export function reduceGameState(state: GameState, command: GameCommand): GameSta
       });
       return bump(state, { agents, objective: "小队在孵化静池休息了一会儿" });
     }
+    case "ADD_FATIGUE": {
+      if (command.amount <= 0) return state;
+      const agents = { ...state.agents };
+      let changed = false;
+      command.agentIds.forEach((id) => {
+        const agent = agents[id];
+        const fatigue = clampFatigue(agent.fatigue + command.amount);
+        if (fatigue === agent.fatigue) return;
+        changed = true;
+        agents[id] = {
+          ...agent,
+          fatigue,
+          mode: fatigue >= 85 && agent.mode === "following" ? "tired" : agent.mode,
+        };
+      });
+      return changed ? bump(state, { agents }) : state;
+    }
+    case "DECAY_MEMORIES": {
+      if (command.amount <= 0) return state;
+      const agents = { ...state.agents };
+      let changed = false;
+      (Object.keys(agents) as AgentId[]).forEach((id) => {
+        const agent = agents[id];
+        const memories = agent.memories.map((memory) => {
+          if (!memory) return null;
+          const strength = Math.max(0, memory.strength - command.amount * (memory.reinforced ? 0.4 : 1));
+          changed = true;
+          if (strength <= 0) return null;
+          const fidelity = strength <= 35
+            ? "fragmented" as const
+            : strength <= 70 && memory.fidelity === "detailed"
+              ? "compressed" as const
+              : memory.fidelity;
+          return {
+            ...memory,
+            strength,
+            fidelity,
+            confidence: strength <= 35 && memory.confidence === "believed" ? "questioned" as const : memory.confidence,
+          };
+        });
+        if (changed) agents[id] = { ...agent, memories };
+      });
+      return changed ? bump(state, { agents }) : state;
+    }
+    case "STORE_MEMORY": {
+      const agent = state.agents[command.agentId];
+      const memories = [...agent.memories];
+      while (memories.length < agent.memoryCapacity) memories.push(null);
+      memories[command.slot] = command.memory;
+      return updateAgent(state, command.agentId, (current) => ({ ...current, memories }));
+    }
+    case "SET_AGENT_UTTERANCE":
+      return updateAgent(state, command.agentId, (agent) => ({ ...agent, utterance: command.utterance }));
     case "RECALL_AGENT": {
       const agent = state.agents[command.agentId];
-      if (!agent.activeTask) return state;
+      if (!agent.activeTask) {
+        return agent.mode === "following" || agent.mode === "tired"
+          ? updateAgent(state, command.agentId, (current) => ({ ...current, mode: "returning" }))
+          : state;
+      }
       if (agent.activeTask.type === "cleanup") {
         const agents = { ...state.agents };
         agent.activeTask.participantIds.forEach((id) => {
@@ -185,11 +310,24 @@ export function reduceGameState(state: GameState, command: GameCommand): GameSta
         });
         return bump(state, { agents, objective: "清理任务已取消，小队正在返回" });
       }
-      return updateAgent(state, command.agentId, (current) => ({ ...current, mode: "returning", activeTask: undefined }));
+      return updateAgent(state, command.agentId, (current) => ({
+        ...current,
+        mode: "returning",
+        returnGateId: current.activeTask?.type === "investigation" ? current.activeTask.viaGateId : undefined,
+        activeTask: undefined,
+      }));
     }
+    case "FINISH_GATE_RETURN":
+      return updateAgent(state, command.agentId, (agent) =>
+        agent.mode === "returning" && agent.returnGateId === command.gateId
+          ? { ...agent, returnGateId: undefined }
+          : agent,
+      );
     case "FINISH_RETURN":
       return updateAgent(state, command.agentId, (agent) =>
-        agent.mode === "returning" ? { ...agent, mode: agent.fatigue >= 85 ? "tired" : "following" } : agent,
+        agent.mode === "returning"
+          ? { ...agent, mode: agent.fatigue >= 85 ? "tired" : "following", returnGateId: undefined }
+          : agent,
       );
     case "START_DISCUSSION": {
       const [firstId, secondId] = command.discussion.agentIds;
@@ -236,12 +374,40 @@ export function reduceGameState(state: GameState, command: GameCommand): GameSta
     }
     case "SET_OBJECTIVE":
       return state.objective === command.objective ? state : bump(state, { objective: command.objective });
+    case "APPLY_GENERATED_CAST": {
+      const agents = { ...state.agents };
+      (Object.keys(command.cast.agents) as AgentId[]).forEach((agentId) => {
+        const profile = command.cast.agents[agentId];
+        agents[agentId] = {
+          ...agents[agentId],
+          name: profile.name,
+          personality: profile.personality,
+          communicationStyle: communicationStyleByPersonality[profile.personality],
+        };
+      });
+      return bump(state, { agents, generatedCast: command.cast, objective: "小队已经准备好，沿河寻找妈妈" });
+    }
+    case "REVEAL_CANDIDATE_FROGS":
+      if (state.candidateFrogsRevealed || confirmedSourceCount(state) < 2) return state;
+      return bump(state, {
+        candidateFrogsRevealed: true,
+        nearbyFrogId: undefined,
+        objective: "线索终于拼出了方向，三位候选妈妈出现在水乡各处",
+      });
     case "CHOOSE_MOTHER":
-      if (state.phase === "ending") return state;
+      if (state.phase === "ending" || !state.candidateFrogsRevealed) return state;
       return bump(state, {
         phase: "ending",
         ending: { selectedMotherId: command.frogId, correct: command.correct },
         objective: command.correct ? "你们找到了真正的妈妈" : "这只青蛙不是它们的妈妈",
+      });
+    case "DEMO_ENDING":
+      return bump(state, {
+        phase: "ending",
+        candidateFrogsRevealed: true,
+        nearbyFrogId: undefined,
+        ending: { selectedMotherId: command.frogId, correct: command.correct },
+        objective: command.correct ? "Demo：成功结算" : "Demo：失败结算",
       });
     case "RESET_GAME":
       return createInitialGameState();
@@ -284,7 +450,12 @@ export function confirmedSourceCount(state: Pick<GameState, "agents">): number {
   const sources = new Set<string>();
   Object.values(state.agents).forEach((agent) => {
     agent.memories.forEach((memory) => {
-      if (memory?.confidence === "confirmed" && memory.topic !== "jump") sources.add(memory.sourceNpcId);
+      if (
+        memory?.confidence === "confirmed" &&
+        memory.topic !== "jump" &&
+        memory.transmission === "direct" &&
+        memory.strength > 20
+      ) sources.add(memory.sourceNpcId);
     });
   });
   return sources.size;

@@ -18,7 +18,9 @@ export function createInputController(options: {
   root: HTMLElement;
   onAgentShortcut(index: number): void;
   onRecall(): void;
-  onToggleDetails(): void;
+  onWhistle(): void;
+  onToggleEvidence(): void;
+  onToggleMemory(): void;
   onEscape(): void;
 }): InputController {
   const pressed = new Set<string>();
@@ -35,9 +37,18 @@ export function createInputController(options: {
     if (event.code === "Digit2") options.onAgentShortcut(1);
     if (event.code === "Digit3") options.onAgentShortcut(2);
     if (event.code === "KeyR") options.onRecall();
-    if (event.code === "KeyM" || event.code === "Tab") {
+    if (event.code === "Space") {
       event.preventDefault();
-      options.onToggleDetails();
+      options.onWhistle();
+    }
+    const evidenceKey = event.code === "KeyM" || event.key.toLowerCase() === "m";
+    if (evidenceKey) {
+      event.preventDefault();
+      options.onToggleEvidence();
+    }
+    if (event.code === "Tab") {
+      event.preventDefault();
+      options.onToggleMemory();
     }
     if (event.code === "Escape") options.onEscape();
   };
@@ -46,6 +57,9 @@ export function createInputController(options: {
     if (movementCode) pressed.delete(movementCode);
   };
   const onBlur = (): void => pressed.clear();
+  const onContextMenu = (event: MouseEvent): void => {
+    if (options.root.contains(event.target as Node)) event.preventDefault();
+  };
 
   const touchCleanups = touchButtons.map((button) => {
     const direction = button.dataset.moveDirection as MoveDirection;
@@ -72,6 +86,7 @@ export function createInputController(options: {
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", onBlur);
+  options.root.addEventListener("contextmenu", onContextMenu);
 
   return {
     movement(target) {
@@ -87,6 +102,7 @@ export function createInputController(options: {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
+      options.root.removeEventListener("contextmenu", onContextMenu);
       touchCleanups.forEach((cleanup) => cleanup());
     },
   };

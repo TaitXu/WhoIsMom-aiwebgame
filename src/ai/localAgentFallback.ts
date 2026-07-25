@@ -1,5 +1,6 @@
 import type { AgentAdapter } from "./agentService";
 import type { AgentRequest, AgentResponse, AgentResult } from "./contracts";
+import { fallbackFrogFeatures, fallbackFrogNames } from "../game/case/frogFeatures";
 
 export function createLocalAgentFallback(): AgentAdapter {
   return {
@@ -14,17 +15,60 @@ export function createLocalAgentFallback(): AgentAdapter {
 }
 
 function fallbackResult(request: AgentRequest): AgentResult {
+  if (request.task === "generate_cast") {
+    return {
+      task: "generate_cast",
+      agents: [
+        { id: "modian", name: "墨点", personality: "cautious", introduction: "我会把每个细节都记下来。" },
+        { id: "xiaolang", name: "小浪", personality: "impulsive", introduction: "我先去前面看看！" },
+        { id: "paopao", name: "泡泡", personality: "social", introduction: "大家一起游，不要走散。" },
+      ],
+      frogs: request.frogIds.map((id) => ({
+        id,
+        name: fallbackFrogNames[id],
+        features: fallbackFrogFeatures[id],
+      })),
+    };
+  }
+  if (request.task === "decide_movement_intent") {
+    const behavior = request.agent.personality === "impulsive"
+      ? "scout_ahead"
+      : request.agent.personality === "social"
+        ? "orbit_companion"
+        : "stay_close";
+    return {
+      task: "decide_movement_intent",
+      behavior,
+      durationMs: 5_500,
+      distance: request.agent.personality === "cautious" ? "near" : "medium",
+      energy: request.agent.personality === "impulsive" ? "excited" : "calm",
+      spokenLine: request.agent.personality === "impulsive"
+        ? "前面好像有新鲜事，我去看看！"
+        : request.agent.personality === "social"
+          ? "大家还记得刚才听到什么吗？"
+          : "先别急，我想把细节记牢。",
+    };
+  }
   if (request.task === "encode_memory") {
-    const fact = request.allowedFacts[0]!;
+    const fact = request.allowedFacts.find(
+      (candidate) => candidate.veracity === "contextual" || candidate.veracity === "false",
+    ) ?? request.allowedFacts[0]!;
     const personality = request.agent.personality;
-    const omittedFields = personality === "impulsive" ? (["time", "place"] as const) : [];
+    const tired = request.agent.fatigue >= 70;
+    const compressed = request.agent.fatigue >= 45 || request.agent.communicationStyle !== "literal";
+    const omittedFields = tired
+      ? (["time", "place", "source"] as const)
+      : compressed
+        ? (["time", "place"] as const)
+        : (["source"] as const);
     return {
       task: "encode_memory",
       selectedFactIds: [fact.id],
       omittedFields: [...omittedFields],
       suggestedSlot: 0,
       tone: personality === "impulsive" ? "excited" : personality === "cautious" ? "calm" : "calm",
-      spokenSummary: summarizeFact(fact, personality),
+      fidelity: tired ? "fragmented" : compressed ? "compressed" : "detailed",
+      spokenSummary: summarizeFact(fact, personality, request.agent.communicationStyle, request.agent.fatigue, omittedFields),
     };
   }
 
@@ -77,12 +121,24 @@ function fallbackResult(request: AgentRequest): AgentResult {
   };
 }
 
-function summarizeFact(fact: MemoryFact, personality: "cautious" | "impulsive" | "social"): string {
-  if (personality === "impulsive") return `我记得它说：${fact.value}！`;
+function summarizeFact(
+  fact: MemoryFact,
+  personality: "cautious" | "impulsive" | "social",
+  communicationStyle: "literal" | "embellishing" | "agreeable",
+  fatigue: number,
+  omittedFields: readonly ("time" | "place" | "source")[],
+): string {
+  if (fatigue >= 70) return `我太累了……只记得“${fact.value.slice(0, 18)}……”`;
+  if (communicationStyle === "embellishing") return `我敢肯定！${fact.value}！`;
   if (personality === "social") {
-    return `我和它聊到：${fact.value}${fact.place ? `，是在${fact.place}` : ""}。`;
+    const place = !omittedFields.includes("place") && fatigue < 45 ? fact.place : undefined;
+    return `我和它聊到：${fact.value}${place ? `，好像是在${place}` : ""}。`;
   }
-  const context = [fact.time, fact.place, fact.source].filter(Boolean).join("，");
+  const context = [
+    omittedFields.includes("time") ? undefined : fact.time,
+    omittedFields.includes("place") ? undefined : fact.place,
+    omittedFields.includes("source") ? undefined : fact.source,
+  ].filter(Boolean).join("，");
   return `我记得很清楚：${fact.value}${context ? `（${context}）` : ""}。`;
 }
 

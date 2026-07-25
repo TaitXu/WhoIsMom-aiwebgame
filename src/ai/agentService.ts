@@ -2,7 +2,9 @@ import type {
   AgentRequest,
   AgentResponse,
   EncodeMemoryRequest,
+  GenerateCastRequest,
   JudgeJumpLearningRequest,
+  MovementDecisionRequest,
   ReconcileMemoriesRequest,
 } from "./contracts";
 
@@ -14,6 +16,8 @@ export interface AgentService {
   encodeMemory(request: EncodeMemoryRequest): Promise<AgentResponse>;
   reconcileMemories(request: ReconcileMemoriesRequest): Promise<AgentResponse>;
   judgeJumpLearning(request: JudgeJumpLearningRequest): Promise<AgentResponse>;
+  decideMovementIntent(request: MovementDecisionRequest): Promise<AgentResponse>;
+  generateCast(request: GenerateCastRequest): Promise<AgentResponse>;
 }
 
 export function createAgentService(
@@ -33,5 +37,7 @@ export function createAgentService(
     encodeMemory: run,
     reconcileMemories: run,
     judgeJumpLearning: run,
+    decideMovementIntent: run,
+    generateCast: run,
   };
 }

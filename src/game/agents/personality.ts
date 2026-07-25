@@ -1,4 +1,4 @@
-import type { AgentId, Personality } from "../../core/types";
+import type { AgentId, CommunicationStyle, Personality } from "../../core/types";
 
 export type PersonalityMotion = Readonly<{
   followDistance: number;
@@ -11,15 +11,15 @@ export type PersonalityMotion = Readonly<{
 
 const motionByPersonality: Record<Personality, PersonalityMotion> = {
   cautious: {
-    followDistance: 1.35,
-    sideOffset: -0.55,
+    followDistance: 2.45,
+    sideOffset: -0.65,
     speed: 3.1,
     tailAmplitude: 0.22,
     tailFrequency: 4.2,
     bobAmplitude: 0.025,
   },
   impulsive: {
-    followDistance: 0.7,
+    followDistance: 2.05,
     sideOffset: 0.05,
     speed: 4.5,
     tailAmplitude: 0.48,
@@ -27,7 +27,7 @@ const motionByPersonality: Record<Personality, PersonalityMotion> = {
     bobAmplitude: 0.06,
   },
   social: {
-    followDistance: 1.7,
+    followDistance: 2.7,
     sideOffset: 0.65,
     speed: 3.7,
     tailAmplitude: 0.34,
@@ -52,4 +52,16 @@ export const personalityLabels: Record<Personality, string> = {
   cautious: "谨慎",
   impulsive: "冲动",
   social: "亲和",
+};
+
+export const communicationStyleByPersonality: Record<Personality, CommunicationStyle> = {
+  cautious: "literal",
+  impulsive: "embellishing",
+  social: "agreeable",
+};
+
+export const communicationStyleLabels: Record<CommunicationStyle, string> = {
+  literal: "照实复述",
+  embellishing: "爱夸张，偶尔会把猜测说成事实",
+  agreeable: "容易顺着同伴改口",
 };

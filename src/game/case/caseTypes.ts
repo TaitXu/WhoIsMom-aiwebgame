@@ -1,8 +1,11 @@
 import type {
   Fact,
+  FrogFeatures,
   FrogId,
   GateId,
   NpcId,
+  NpcIntimidation,
+  NpcReliability,
   ObstacleId,
   Personality,
   RegionId,
@@ -13,22 +16,20 @@ export type NpcDefinition = Readonly<{
   id: NpcId;
   name: string;
   role: string;
+  reliability: NpcReliability;
+  intimidation: NpcIntimidation;
+  credibilityCue: string;
   facts: readonly Fact[];
   topics: readonly Topic[];
   regionId: RegionId;
   position: readonly [number, number, number];
 }>;
 
-export type FrogAccessory = "leaf-hat" | "red-scarf";
-
 export type CandidateFrog = Readonly<{
   id: FrogId;
   name: string;
   description: string;
-  bodyColor: number;
-  bellyColor: number;
-  accentColor: number;
-  accessory: FrogAccessory;
+  features: FrogFeatures;
   regionId: RegionId;
   position: readonly [number, number, number];
 }>;

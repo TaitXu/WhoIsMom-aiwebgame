@@ -18,8 +18,12 @@ const learnedMemory: Memory = {
   summary: "红脚蓝背",
   rememberedSource: "旅行蜻蜓",
   sourceNpcId: "dragonfly",
+  sourceNpcIds: ["dragonfly"],
   emotion: "excited",
   confidence: "believed",
+  fidelity: "compressed",
+  transmission: "direct",
+  strength: 100,
   createdAt: 1,
   reinforced: false,
   resultSource: "fallback",
@@ -37,6 +41,49 @@ const evidence: EvidenceEvent = {
 };
 
 describe("game rules", () => {
+  it("runs a selected gate scout through jump, observation, dialogue, and return", () => {
+    const gateTask: InvestigationTask = {
+      type: "investigation",
+      id: "gate-scout-1",
+      npcId: "dragonfly",
+      topic: "source",
+      autonomous: false,
+      viaGateId: "dragonfly-gap",
+    };
+    let state = createInitialGameState();
+    state.agents.xiaolang.jumpKnowledge = "learned";
+    state = reduceGameState(state, { type: "START_GATE_SCOUT", agentId: "xiaolang", task: gateTask, gateId: "dragonfly-gap" });
+    expect(state.agents.xiaolang.mode).toBe("jumping");
+    state = reduceGameState(state, { type: "FINISH_GATE_JUMP", agentId: "xiaolang", taskId: gateTask.id });
+    expect(state.agents.xiaolang.mode).toBe("considering");
+    state = reduceGameState(state, { type: "RESUME_INVESTIGATION", agentId: "xiaolang", taskId: gateTask.id });
+    expect(state.agents.xiaolang.mode).toBe("approaching");
+    state = reduceGameState(state, { type: "BEGIN_INTERACTION", agentId: "xiaolang", taskId: gateTask.id });
+    state = reduceGameState(state, {
+      type: "COMPLETE_INVESTIGATION",
+      agentId: "xiaolang",
+      taskId: gateTask.id,
+      memory: learnedMemory,
+      slot: 0,
+      evidence,
+      fatigue: 8,
+    });
+    expect(state.agents.xiaolang.mode).toBe("returning");
+    expect(state.agents.xiaolang.returnGateId).toBe("dragonfly-gap");
+    state = reduceGameState(state, { type: "FINISH_GATE_RETURN", agentId: "xiaolang", gateId: "dragonfly-gap" });
+    expect(state.agents.xiaolang.returnGateId).toBeUndefined();
+  });
+
+  it("keeps a primary agent while storing a box-selected squad", () => {
+    const state = reduceGameState(createInitialGameState(), {
+      type: "SELECT_AGENTS",
+      agentIds: ["paopao", "modian", "paopao"],
+    });
+
+    expect(state.selectedAgentIds).toEqual(["paopao", "modian"]);
+    expect(state.selectedAgentId).toBe("paopao");
+  });
+
   it("completes an investigation once without a global action budget", () => {
     let state = createInitialGameState();
     state = reduceGameState(state, { type: "START_INVESTIGATION", agentId: "xiaolang", task });
@@ -68,6 +115,25 @@ describe("game rules", () => {
     expect(duplicate).toBe(state);
   });
 
+  it("can end a frightening conversation without a new memory and forget an old one", () => {
+    let state = createInitialGameState();
+    state.agents.xiaolang.memories[0] = learnedMemory;
+    state = reduceGameState(state, { type: "START_INVESTIGATION", agentId: "xiaolang", task });
+    state = reduceGameState(state, { type: "BEGIN_INTERACTION", agentId: "xiaolang", taskId: task.id });
+    state = reduceGameState(state, {
+      type: "FAIL_INVESTIGATION",
+      agentId: "xiaolang",
+      taskId: task.id,
+      forgetMemoryId: learnedMemory.id,
+      evidence: { ...evidence, id: "fear-evidence", summary: "受到惊吓，忘掉了旧记忆" },
+      fatigue: 16,
+    });
+    expect(state.agents.xiaolang.memories[0]).toBeNull();
+    expect(state.agents.xiaolang.mode).toBe("returning");
+    expect(state.agents.xiaolang.fatigue).toBe(16);
+    expect(state.evidenceLog.at(-1)?.summary).toBe("受到惊吓，忘掉了旧记忆");
+  });
+
   it("ignores a late AI result after recall or ending", () => {
     let state = createInitialGameState();
     state = reduceGameState(state, { type: "START_INVESTIGATION", agentId: "xiaolang", task });
@@ -85,6 +151,7 @@ describe("game rules", () => {
     expect(afterRecall).toBe(state);
 
     let endingState = createInitialGameState();
+    endingState.candidateFrogsRevealed = true;
     endingState = reduceGameState(endingState, { type: "START_INVESTIGATION", agentId: "xiaolang", task });
     endingState = reduceGameState(endingState, { type: "BEGIN_INTERACTION", agentId: "xiaolang", taskId: task.id });
     endingState = reduceGameState(endingState, { type: "CHOOSE_MOTHER", frogId: "marsh-frog", correct: true });
@@ -135,5 +202,74 @@ describe("game rules", () => {
     state.agents.xiaolang.memories[0] = { ...learnedMemory, id: "turtle-memory", sourceNpcId: "turtle", confidence: "confirmed" };
     state.agents.modian.memories[0] = { ...learnedMemory, id: "crab-memory", sourceNpcId: "crab", confidence: "confirmed" };
     expect(confirmedSourceCount(state)).toBe(2);
+  });
+
+  it("reveals candidate frogs only after two confirmed sources and keeps them revealed", () => {
+    let state = createInitialGameState();
+    const beforeEvidence = reduceGameState(state, { type: "REVEAL_CANDIDATE_FROGS" });
+    expect(beforeEvidence).toBe(state);
+
+    state.agents.xiaolang.memories[0] = {
+      ...learnedMemory,
+      id: "turtle-confirmed",
+      sourceNpcId: "turtle",
+      sourceNpcIds: ["turtle"],
+      confidence: "confirmed",
+    };
+    state.agents.modian.memories[0] = {
+      ...learnedMemory,
+      id: "crab-confirmed",
+      sourceNpcId: "crab",
+      sourceNpcIds: ["crab"],
+      confidence: "confirmed",
+    };
+    state = reduceGameState(state, { type: "REVEAL_CANDIDATE_FROGS" });
+    expect(state.candidateFrogsRevealed).toBe(true);
+    expect(state.objective).toContain("三位候选妈妈");
+
+    state.agents.xiaolang.memories[0] = null;
+    state.agents.modian.memories[0] = null;
+    expect(reduceGameState(state, { type: "DECAY_MEMORIES", amount: 5 }).candidateFrogsRevealed).toBe(true);
+  });
+
+  it("does not allow choosing a hidden candidate frog", () => {
+    const state = createInitialGameState();
+    const next = reduceGameState(state, { type: "CHOOSE_MOTHER", frogId: "marsh-frog", correct: true });
+    expect(next).toBe(state);
+  });
+
+  it("supports demo success and failure endings without investigation setup", () => {
+    const success = reduceGameState(createInitialGameState(), {
+      type: "DEMO_ENDING",
+      frogId: "marsh-frog",
+      correct: true,
+    });
+    expect(success.phase).toBe("ending");
+    expect(success.candidateFrogsRevealed).toBe(true);
+    expect(success.ending).toEqual({ selectedMotherId: "marsh-frog", correct: true });
+
+    const failure = reduceGameState(createInitialGameState(), {
+      type: "DEMO_ENDING",
+      frogId: "tree-frog",
+      correct: false,
+    });
+    expect(failure.ending).toEqual({ selectedMotherId: "tree-frog", correct: false });
+  });
+
+  it("adds travel fatigue, restores it at rest, and decays unreinforced memories", () => {
+    let state = createInitialGameState();
+    state.agents.modian.memories[0] = { ...learnedMemory, strength: 38, fidelity: "compressed" };
+    state = reduceGameState(state, { type: "ADD_FATIGUE", agentIds: ["modian"], amount: 86, reason: "movement" });
+    expect(state.agents.modian.fatigue).toBe(86);
+    expect(state.agents.modian.mode).toBe("tired");
+
+    state = reduceGameState(state, { type: "DECAY_MEMORIES", amount: 5 });
+    expect(state.agents.modian.memories[0]).toMatchObject({ strength: 33, fidelity: "fragmented", confidence: "questioned" });
+    state = reduceGameState(state, { type: "DECAY_MEMORIES", amount: 40 });
+    expect(state.agents.modian.memories[0]).toBeNull();
+
+    state = reduceGameState(state, { type: "REST_SQUAD" });
+    expect(state.agents.modian.fatigue).toBe(51);
+    expect(state.agents.modian.mode).toBe("following");
   });
 });

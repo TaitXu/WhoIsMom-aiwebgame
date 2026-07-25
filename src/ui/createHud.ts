@@ -1,21 +1,52 @@
-import type { AgentId, AgentMode, FrogId, GameState, GateId, Memory, NpcId, ObstacleId, Topic } from "../core/types";
-import { agentMarkerColors, personalityLabels } from "../game/agents/personality";
+import type { AgentId, AgentMode, EvidenceEvent, FrogId, GameState, GateId, Memory, NpcId, ObstacleId, Topic } from "../core/types";
+import type { LlmConfigStore } from "../ai/llmConfig";
+import { agentMarkerColors, communicationStyleLabels, personalityLabels } from "../game/agents/personality";
 import { demoCase } from "../game/case/demoCase";
 import { confirmedSourceCount, memoryUpgradeCost } from "../game/state/gameRules";
 
 export interface Hud {
   render(state: Readonly<GameState>): void;
-  toggleDetails(): void;
-  openInvestigation(npcId?: NpcId): void;
-  openCleanup(obstacleId?: ObstacleId): void;
+  renderWorldOverlays(overlays: WorldOverlays): void;
+  toggleEvidence(): void;
+  toggleMemory(): void;
   openMotherChoice(frogId?: FrogId): void;
   closeModal(): void;
   dispose(): void;
 }
 
+export type WorldOverlays = Readonly<{
+  bubbles: ReadonlyArray<{
+    targetType: "npc" | "obstacle" | "gate";
+    targetId: NpcId | ObstacleId | GateId;
+    label: string;
+    detail: string;
+    x: number;
+    y: number;
+  }>;
+  progress: ReadonlyArray<{
+    agentId: AgentId;
+    label: string;
+    value: number;
+    x: number;
+    y: number;
+  }>;
+  utterances: ReadonlyArray<{
+    agentId: AgentId;
+    text: string;
+    kind: "idle" | "autonomous" | "peer" | "tired";
+    x: number;
+    y: number;
+  }>;
+  frogIndicators: ReadonlyArray<{
+    frogId: FrogId;
+    label: string;
+    x: number;
+    y: number;
+    angle: number;
+  }>;
+}>;
+
 type ModalState =
-  | { type: "investigate"; npcId: NpcId; agentIds: AgentId[]; topic: Topic }
-  | { type: "cleanup"; obstacleId: ObstacleId; agentIds: AgentId[] }
   | { type: "discussion"; firstId: AgentId; secondId: AgentId; topic: Topic }
   | { type: "mother"; frogId: FrogId }
   | null;
@@ -40,18 +71,11 @@ const topicLabels: Record<Topic, string> = {
   source: "来源",
   jump: "跳跃",
 };
-const topicHints: Record<Topic, string> = {
-  appearance: "它看起来是什么样？",
-  location: "它在哪里出现？",
-  source: "这条消息从哪里来？",
-  jump: "怎样借荷叶的弹力起跳？",
-};
-
 export function createHud(options: {
   root: HTMLElement;
   onSelect(agentId: AgentId): void;
   onRecall(agentId: AgentId): void;
-  onInvestigate(agentIds: AgentId[], npcId: NpcId, topic: Topic): void;
+  onInvestigate(agentIds: AgentId[], npcId: NpcId): void;
   onCleanup(agentIds: AgentId[], obstacleId: ObstacleId): void;
   onDiscuss(firstId: AgentId, secondId: AgentId, topic: Topic): void;
   onTeachJump(teacherId: AgentId, studentId: AgentId): void;
@@ -59,33 +83,95 @@ export function createHud(options: {
   onScoutGate(gateId: GateId): void;
   onRest(): void;
   onChooseMother(frogId: FrogId): void;
+  onDemoEnding(correct: boolean): void;
   onRestart(): void;
+  onStart(): Promise<void>;
+  llmConfig: LlmConfigStore;
 }): Hud {
   const squad = requireElement<HTMLElement>(options.root, "[data-squad]");
   const objective = requireElement<HTMLElement>(options.root, "[data-objective]");
   const region = requireElement<HTMLElement>(options.root, "[data-region]");
   const inspiration = requireElement<HTMLElement>(options.root, "[data-inspiration]");
   const evidence = requireElement<HTMLElement>(options.root, "[data-evidence]");
-  const minimap = requireElement<HTMLElement>(options.root, "[data-minimap]");
-  const selectionLabel = requireElement<HTMLElement>(options.root, "[data-selection-label]");
-  const selectionHint = requireElement<HTMLElement>(options.root, "[data-selection-hint]");
-  const detailsButton = requireElement<HTMLButtonElement>(options.root, '[data-action="toggle-details"]');
-  const recallButton = requireElement<HTMLButtonElement>(options.root, '[data-action="recall"]');
   const prompt = requireElement<HTMLElement>(options.root, "[data-interaction-prompt]");
+  const bubbleLayer = requireElement<HTMLElement>(options.root, "[data-world-bubbles]");
+  const progressLayer = requireElement<HTMLElement>(options.root, "[data-agent-progress]");
+  const speechLayer = requireElement<HTMLElement>(options.root, "[data-agent-speech]");
+  const frogDirectionLayer = requireElement<HTMLElement>(options.root, "[data-frog-directions]");
+  const candidateRevealNotice = requireElement<HTMLElement>(options.root, "[data-candidate-reveal-notice]");
   const drawer = requireElement<HTMLElement>(options.root, "[data-agent-drawer]");
   const drawerName = requireElement<HTMLElement>(options.root, "[data-drawer-name]");
   const drawerPersonality = requireElement<HTMLElement>(options.root, "[data-drawer-personality]");
   const meters = requireElement<HTMLElement>(options.root, "[data-agent-meters]");
   const memoryList = requireElement<HTMLElement>(options.root, "[data-memory-list]");
   const drawerActions = requireElement<HTMLElement>(options.root, "[data-drawer-actions]");
+  const evidenceDrawer = requireElement<HTMLElement>(options.root, "[data-evidence-drawer]");
+  const evidenceSummary = requireElement<HTMLElement>(options.root, "[data-evidence-summary]");
+  const evidenceChain = requireElement<HTMLElement>(options.root, "[data-evidence-chain]");
   const modalLayer = requireElement<HTMLElement>(options.root, "[data-modal-layer]");
   const modalContent = requireElement<HTMLElement>(options.root, "[data-modal-content]");
   const ending = requireElement<HTMLElement>(options.root, "[data-ending]");
+  const startScreen = requireElement<HTMLElement>(options.root, "[data-start-screen]");
+  const loadingScreen = requireElement<HTMLElement>(options.root, "[data-loading-screen]");
+  const loadingStatus = requireElement<HTMLElement>(options.root, "[data-loading-status]");
+  const startButton = requireElement<HTMLButtonElement>(options.root, '[data-action="start-game"]');
+  const settingsPanel = requireElement<HTMLElement>(options.root, "[data-settings-panel]");
+  const baseUrlInput = requireElement<HTMLInputElement>(options.root, "[data-llm-base-url]");
+  const modelInput = requireElement<HTMLInputElement>(options.root, "[data-llm-model]");
+  const apiKeyInput = requireElement<HTMLInputElement>(options.root, "[data-llm-api-key]");
+  const defaultPanel = requireElement<HTMLElement>(options.root, "[data-llm-default-panel]");
+  const customPanel = requireElement<HTMLElement>(options.root, "[data-llm-custom-panel]");
+  const modeButtons = Array.from(options.root.querySelectorAll<HTMLButtonElement>("[data-action=select-llm-mode]"));
+  const settingsStatus = requireElement<HTMLElement>(options.root, "[data-settings-status]");
 
   const cards = new Map<AgentId, HTMLButtonElement>();
+  const bubbleButtons = new Map<string, HTMLButtonElement>();
+  const progressBars = new Map<AgentId, HTMLElement>();
+  const speechBubbles = new Map<AgentId, HTMLElement>();
+  const frogDirectionIndicators = new Map<FrogId, HTMLElement>();
   let lastState: Readonly<GameState> | null = null;
   let drawerOpen = false;
+  let evidenceOpen = false;
   let modalState: ModalState = null;
+  let starting = false;
+  let loadingTimer: number | undefined;
+  let draftLlmMode: "default" | "custom" = "default";
+  let promptKey: string | null = null;
+  let promptTimer: number | undefined;
+  let candidateRevealTimer: number | undefined;
+  options.root.dataset.screen = "title";
+
+  function renderSettings(): void {
+    const config = options.llmConfig.get();
+    draftLlmMode = config.mode;
+    baseUrlInput.value = config.baseUrl;
+    modelInput.value = config.model;
+    apiKeyInput.value = config.apiKey;
+    syncLlmModeUi();
+    settingsStatus.textContent = config.mode === "default"
+      ? "当前使用默认模型，失败时自动回退到本地 Agent"
+      : "当前使用自定义模型，失败时自动回退到本地 Agent";
+  }
+
+  function syncLlmModeUi(): void {
+    const isDefault = draftLlmMode === "default";
+    defaultPanel.hidden = !isDefault;
+    customPanel.hidden = isDefault;
+    modeButtons.forEach((button) => {
+      const active = button.dataset.mode === draftLlmMode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+  }
+
+  function openSettings(): void {
+    renderSettings();
+    settingsPanel.hidden = false;
+  }
+
+  function closeSettings(): void {
+    settingsPanel.hidden = true;
+  }
 
   agentOrder.forEach((agentId, index) => {
     const button = element("button", "squad-member") as HTMLButtonElement;
@@ -94,35 +180,97 @@ export function createHud(options: {
     button.style.setProperty("--agent-color", colorHex(agentMarkerColors[agentId]));
     const heading = element("span", "squad-member__heading");
     heading.append(element("strong", "squad-member__name"), element("kbd", "squad-member__shortcut", String(index + 1)));
-    button.append(heading, element("span", "squad-member__mode"), element("span", "memory-pips"), element("span", "fatigue-mini"));
+    button.append(
+      element("span", "squad-member__crest"),
+      heading,
+      element("span", "squad-member__mode"),
+      element("span", "memory-pips"),
+      element("span", "fatigue-mini"),
+    );
     squad.append(button);
     cards.set(agentId, button);
   });
 
-  demoCase.regions.forEach((definition) => {
-    const cell = element("span", "map-cell");
-    cell.dataset.regionId = definition.id;
-    cell.title = definition.name;
-    minimap.append(cell);
-  });
-
-  const onRootClick = (event: MouseEvent): void => {
+  const onRootClick = async (event: MouseEvent): Promise<void> => {
     const target = (event.target as HTMLElement).closest<HTMLButtonElement>("button");
     if (!target) return;
     const agentId = target.dataset.agentId as AgentId | undefined;
     if (agentId && target.classList.contains("squad-member")) {
-      if (lastState?.selectedAgentId === agentId) drawerOpen = !drawerOpen;
+      if (lastState?.selectedAgentId === agentId && selectedAgentIds(lastState).length === 1) drawerOpen = !drawerOpen;
       else options.onSelect(agentId);
       renderCurrent();
       return;
     }
 
     const action = target.dataset.action;
-    if (action === "toggle-details") toggleDetails();
+    if (action === "start-game") {
+      if (starting) return;
+      starting = true;
+      startButton.disabled = true;
+      startScreen.hidden = true;
+      loadingScreen.hidden = false;
+      options.root.dataset.screen = "loading";
+      const statuses = ["正在唤醒河流里的 Agent…", "正在生成三只蝌蚪的性格…", "正在描绘候选妈妈的形象…", "正在整理本局小队…"];
+      let statusIndex = 0;
+      loadingStatus.textContent = statuses[statusIndex]!;
+      loadingTimer = window.setInterval(() => {
+        statusIndex = (statusIndex + 1) % statuses.length;
+        loadingStatus.textContent = statuses[statusIndex]!;
+      }, 900);
+      try {
+        await options.onStart();
+        loadingStatus.textContent = "准备完成，开始旅程";
+        await new Promise((resolve) => window.setTimeout(resolve, 420));
+        loadingScreen.hidden = true;
+        options.root.dataset.screen = "game";
+      } catch {
+        loadingStatus.textContent = "生成失败，已使用本地角色模板";
+        await new Promise((resolve) => window.setTimeout(resolve, 700));
+        loadingScreen.hidden = true;
+      } finally {
+        if (loadingTimer !== undefined) window.clearInterval(loadingTimer);
+        loadingTimer = undefined;
+        starting = false;
+        startButton.disabled = false;
+      }
+    }
+    if (action === "open-settings") openSettings();
+    if (action === "close-settings") closeSettings();
+    if (action === "select-llm-mode") {
+      if (target.dataset.mode === "default" || target.dataset.mode === "custom") {
+        draftLlmMode = target.dataset.mode;
+        syncLlmModeUi();
+        settingsStatus.textContent = draftLlmMode === "default"
+          ? "将使用服务端默认模型"
+          : "请输入自定义模型服务地址、名称和 Key";
+      }
+    }
+    if (action === "save-settings") {
+      if (draftLlmMode === "custom") {
+        const baseUrl = baseUrlInput.value.trim();
+        const validUrl = (() => {
+          try { return new URL(baseUrl).protocol === "https:"; } catch { return false; }
+        })();
+        if (!validUrl || !modelInput.value.trim() || !apiKeyInput.value) {
+          settingsStatus.textContent = "自定义模式需要 HTTPS 服务地址、模型名称和 API Key";
+          return;
+        }
+      }
+      options.llmConfig.set({
+        mode: draftLlmMode,
+        baseUrl: baseUrlInput.value.trim(),
+        model: modelInput.value.trim(),
+        apiKey: apiKeyInput.value,
+      });
+      settingsStatus.textContent = draftLlmMode === "default" ? "已切换到默认模型" : "自定义模型设置已保存";
+    }
+    if (action === "reset-settings") {
+      options.llmConfig.reset();
+      renderSettings();
+    }
     if (action === "close-drawer") { drawerOpen = false; renderCurrent(); }
+    if (action === "close-evidence") { evidenceOpen = false; renderCurrent(); }
     if (action === "recall" && lastState?.selectedAgentId) options.onRecall(lastState.selectedAgentId);
-    if (action === "investigate-nearby") openInvestigation();
-    if (action === "cleanup-nearby") openCleanup();
     if (action === "talk-mother") openMotherChoice();
     if (action === "open-discussion") openDiscussion();
     if (action === "upgrade-memory" && lastState?.selectedAgentId) options.onUpgradeMemory(lastState.selectedAgentId);
@@ -131,28 +279,17 @@ export function createHud(options: {
     if (action === "rest") options.onRest();
     if (action === "modal-close") closeModal();
     if (action === "restart") options.onRestart();
-
-    if (action === "modal-agent-toggle" && modalState && (modalState.type === "investigate" || modalState.type === "cleanup")) {
-      const id = target.dataset.agentId as AgentId;
-      const max = modalState.type === "investigate" ? 3 : 2;
-      const exists = modalState.agentIds.includes(id);
-      modalState = { ...modalState, agentIds: exists ? modalState.agentIds.filter((candidate) => candidate !== id) : modalState.agentIds.length < max ? [...modalState.agentIds, id] : modalState.agentIds };
-      renderModal();
+    if (action === "demo-ending-success" || action === "demo-ending-failure") {
+      closeSettings();
+      options.onDemoEnding(action === "demo-ending-success");
     }
-    if (action === "investigation-topic" && modalState?.type === "investigate") {
-      modalState = { ...modalState, topic: target.dataset.topic as Topic };
-      renderModal();
+    if (action === "world-dialogue" && lastState) {
+      options.onInvestigate(selectedAgentIds(lastState), target.dataset.targetId as NpcId);
     }
-    if (action === "investigation-confirm" && modalState?.type === "investigate") {
-      const current = modalState;
-      closeModal();
-      options.onInvestigate(current.agentIds, current.npcId, current.topic);
+    if (action === "world-cleanup" && lastState) {
+      options.onCleanup(selectedAgentIds(lastState), target.dataset.targetId as ObstacleId);
     }
-    if (action === "cleanup-confirm" && modalState?.type === "cleanup") {
-      const current = modalState;
-      closeModal();
-      options.onCleanup(current.agentIds, current.obstacleId);
-    }
+    if (action === "world-scout-gate") options.onScoutGate(target.dataset.targetId as GateId);
     if (action === "discussion-agent" && modalState?.type === "discussion") {
       const secondId = target.dataset.agentId as AgentId;
       const available = commonTopics(lastState!, modalState.firstId, secondId);
@@ -182,68 +319,101 @@ export function createHud(options: {
   modalLayer.addEventListener("click", onBackdropClick);
 
   function render(state: Readonly<GameState>): void {
+    const candidatesJustRevealed = state.candidateFrogsRevealed && !lastState?.candidateFrogsRevealed;
     lastState = state;
     objective.textContent = state.objective;
     const regionDefinition = demoCase.regions.find((candidate) => candidate.id === state.currentRegionId)!;
     region.textContent = regionDefinition.name;
     inspiration.textContent = String(state.inspiration);
     evidence.textContent = `${confirmedSourceCount(state)}/2`;
-    renderMap(state);
     agentOrder.forEach((id) => renderSquadMember(cards.get(id)!, state, id));
     const selected = state.selectedAgentId ? state.agents[state.selectedAgentId] : undefined;
-    selectionLabel.textContent = selected ? `已选择 ${selected.name}` : "尚未选择蝌蚪";
-    selectionHint.textContent = selected ? `${personalityLabels[selected.personality]} · ${modeLabels[selected.mode]}` : "点击队伍色块，或按 1-3";
-    detailsButton.disabled = !selected;
-    recallButton.disabled = !selected?.activeTask;
     renderPrompt(state, selected?.id);
     renderDrawer(state, selected?.id);
+    renderEvidence(state);
     renderEnding(state);
+    if (candidatesJustRevealed && state.phase === "explore") showCandidateRevealNotice();
     if (modalState) renderModal();
   }
 
-  function renderMap(state: Readonly<GameState>): void {
-    minimap.querySelectorAll<HTMLElement>(".map-cell").forEach((cell) => {
-      const id = cell.dataset.regionId!;
-      cell.classList.toggle("is-discovered", state.discoveredRegionIds.includes(id as GameState["currentRegionId"]));
-      cell.classList.toggle("is-current", id === state.currentRegionId);
-      const definition = demoCase.regions.find((candidate) => candidate.id === id)!;
-      const entityCount = [
-        ...demoCase.npcs.filter((item) => item.regionId === id),
-        ...demoCase.candidates.filter((item) => item.regionId === id),
-        ...demoCase.obstacles.filter((item) => item.regionId === id && !state.clearedObstacleIds.includes(item.id)),
-      ].filter((item) => state.discoveredEntityIds.includes(item.id)).length;
-      cell.dataset.entities = entityCount > 0 ? String(entityCount) : "";
-      cell.style.setProperty("--region-accent", colorHex(definition.accentColor));
-    });
+  function showCandidateRevealNotice(): void {
+    candidateRevealNotice.hidden = false;
+    if (candidateRevealTimer !== undefined) window.clearTimeout(candidateRevealTimer);
+    candidateRevealTimer = window.setTimeout(() => {
+      candidateRevealNotice.hidden = true;
+      candidateRevealTimer = undefined;
+    }, 4_800);
   }
 
   function renderPrompt(state: Readonly<GameState>, selectedId?: AgentId): void {
-    prompt.replaceChildren();
-    if (state.phase === "ending") { prompt.hidden = true; return; }
+    if (state.phase === "ending") { hidePrompt(); return; }
     if (state.nearbyNpcId) {
       const npc = demoCase.npcs.find((candidate) => candidate.id === state.nearbyNpcId)!;
-      prompt.append(element("span", "prompt-copy", `${npc.name} · ${npc.role}`), actionButton("调查", "investigate-nearby", "text-button text-button--cyan"));
+      const temperamentCue = npc.intimidation === "high"
+        ? "气势逼人，胆小的蝌蚪可能会慌"
+        : npc.intimidation === "mild"
+          ? "动作突然，容易打断不合适的蝌蚪"
+          : "交流节奏比较稳定";
+      showPrompt(
+        `npc:${npc.id}:${selectedId ? "selected" : "none"}`,
+        element("span", "prompt-copy", selectedId
+          ? `${npc.name}：${npc.credibilityCue}；${temperamentCue}。点击头顶气泡开始聊天`
+          : `先选择蝌蚪，再和${npc.name}聊天；${npc.credibilityCue}，${temperamentCue}`),
+      );
     } else if (state.nearbyObstacleId) {
       const obstacle = demoCase.obstacles.find((candidate) => candidate.id === state.nearbyObstacleId)!;
-      prompt.append(element("span", "prompt-copy", `${obstacle.name} · 清理可得 ${obstacle.reward} 灵感`), actionButton("分配清理", "cleanup-nearby", "text-button text-button--yellow"));
+      showPrompt(`obstacle:${obstacle.id}:${selectedId ? "selected" : "none"}`, element("span", "prompt-copy", selectedId ? `悬停${obstacle.name}，点击头顶气泡安排清理` : `先选择蝌蚪 · 清理可得 ${obstacle.reward} 灵感`));
     } else if (state.nearbyFrogId) {
       const frog = demoCase.candidates.find((candidate) => candidate.id === state.nearbyFrogId)!;
-      prompt.append(element("span", "prompt-copy", `${frog.name}正在这里休息`), actionButton("交谈", "talk-mother", "text-button text-button--pink"));
+      showPrompt(`frog:${frog.id}`, element("span", "prompt-copy", `${frog.name}正在这里休息`), actionButton("交谈", "talk-mother", "text-button text-button--pink"));
     } else if (state.nearbyGateId === "dragonfly-gap") {
-      const learned = agentOrder.some((id) => state.agents[id].jumpKnowledge === "learned");
-      prompt.append(element("span", "prompt-copy", learned ? "会跳跃的蝌蚪可以独自越过叶隙" : "先去春草岸学习跳跃"));
-      if (learned && !state.scoutedGateIds.includes("dragonfly-gap")) prompt.append(actionButton("派去侦察", "scout-gate", "text-button text-button--pink"));
+      const selected = state.selectedAgentIds.length === 1 && selectedId ? state.agents[selectedId] : undefined;
+      const scouted = state.scoutedGateIds.includes("dragonfly-gap");
+      const copy = scouted
+        ? "对岸的信息已经带回来了"
+        : !selected
+          ? "只选择一只会跳跃的蝌蚪，然后点击叶隙"
+          : selected.jumpKnowledge !== "learned"
+            ? `${selected.name}还没有掌握跳跃`
+            : selected.mode !== "following"
+              ? `${selected.name}需要先回到队伍`
+              : `点击叶隙，让${selected.name}跳过去侦察`;
+      const canScout = Boolean(selected && selected.jumpKnowledge === "learned" && selected.mode === "following" && selected.fatigue < 90 && !scouted);
+      showPrompt(
+        `gate:dragonfly-gap:${selected?.id ?? "none"}:${selected?.jumpKnowledge ?? "none"}:${selected?.mode ?? "none"}:${scouted}`,
+        element("span", "prompt-copy", copy),
+        ...(canScout ? [actionButton(`让${selected!.name}跳过去`, "scout-gate", "text-button text-button--pink")] : []),
+      );
     } else if (state.nearbyGateId === "lotus-gate") {
       const learnedCount = agentOrder.filter((id) => state.agents[id].jumpKnowledge === "learned").length;
-      prompt.append(element("span", "prompt-copy", learnedCount === 3 ? "三只蝌蚪都准备好了，长桥已经畅通" : `跳跃掌握 ${learnedCount}/3`));
+      showPrompt(`gate:lotus-gate:${learnedCount}`, element("span", "prompt-copy", learnedCount === 3 ? "三只蝌蚪都准备好了，长桥已经畅通" : `跳跃掌握 ${learnedCount}/3`));
     } else if (state.atRestSpot) {
-      prompt.append(element("span", "prompt-copy", "孵化静池能让疲惫的小队安定下来"), actionButton("休息", "rest", "text-button text-button--green"));
+      showPrompt("rest", element("span", "prompt-copy", "孵化静池能让疲惫的小队安定下来"), actionButton("休息", "rest", "text-button text-button--green"));
     } else {
-      prompt.hidden = true;
-      return;
+      hidePrompt();
     }
+  }
+
+  function showPrompt(key: string, ...children: HTMLElement[]): void {
+    prompt.replaceChildren(...children);
     prompt.hidden = false;
-    void selectedId;
+    if (promptKey === key) return;
+    promptKey = key;
+    if (promptTimer !== undefined) window.clearTimeout(promptTimer);
+    promptTimer = window.setTimeout(() => {
+      if (promptKey === key) prompt.hidden = true;
+      promptTimer = undefined;
+    }, 3000);
+  }
+
+  function hidePrompt(): void {
+    prompt.hidden = true;
+    prompt.replaceChildren();
+    promptKey = null;
+    if (promptTimer !== undefined) {
+      window.clearTimeout(promptTimer);
+      promptTimer = undefined;
+    }
   }
 
   function renderDrawer(state: Readonly<GameState>, selectedId?: AgentId): void {
@@ -251,7 +421,7 @@ export function createHud(options: {
     drawer.hidden = !drawerOpen || !agent || state.phase === "ending";
     if (!agent) return;
     drawerName.textContent = agent.name;
-    drawerPersonality.textContent = `${personalityLabels[agent.personality]}型 Agent`;
+    drawerPersonality.textContent = `${personalityLabels[agent.personality]}型 · ${communicationStyleLabels[agent.communicationStyle]}`;
     meters.replaceChildren(
       meter("疲劳", `${agent.fatigue}%`, agent.fatigue, agent.fatigue >= 70 ? "coral" : "green"),
       meter("跳跃", jumpLabel(agent.jumpKnowledge), agent.jumpKnowledge === "learned" ? 100 : agent.jumpKnowledge === "partial" ? 50 : 0, "cyan"),
@@ -259,6 +429,7 @@ export function createHud(options: {
     memoryList.replaceChildren();
     agent.memories.slice(0, agent.memoryCapacity).forEach((memory, index) => memoryList.append(memoryRow(memory, index)));
     drawerActions.replaceChildren();
+    if (agent.activeTask) drawerActions.append(actionButton("召回蝌蚪", "recall", "text-button text-button--pink"));
     const discuss = actionButton("安排对证", "open-discussion", "text-button text-button--cyan");
     discuss.disabled = !agent.memories.some(Boolean) || !agentOrder.some((id) => id !== agent.id && state.agents[id].memories.some(Boolean));
     drawerActions.append(discuss);
@@ -278,13 +449,28 @@ export function createHud(options: {
     }
   }
 
+  function renderEvidence(state: Readonly<GameState>): void {
+    evidenceDrawer.hidden = !evidenceOpen || state.phase === "ending";
+    if (!evidenceOpen || state.phase === "ending") return;
+    const sourceCount = confirmedSourceCount(state);
+    evidenceSummary.textContent = sourceCount >= 2
+      ? "两条独立来源已经拼齐，可以开始判断妈妈是谁。"
+      : `已确认 ${sourceCount}/2 条独立来源，继续派蝌蚪去听听河边的朋友。`;
+    evidenceChain.replaceChildren();
+    if (state.evidenceLog.length === 0) {
+      evidenceChain.append(element("p", "evidence-chain__empty", "还没有记录。让蝌蚪去聊天、清理或互相对证，线索会贴在这里。"));
+      return;
+    }
+    state.evidenceLog.slice().reverse().forEach((event) => evidenceChain.append(evidenceRow(event, state)));
+  }
+
   function renderEnding(state: Readonly<GameState>): void {
     ending.hidden = state.phase !== "ending" || !state.ending;
     if (!state.ending) return;
     const selected = demoCase.candidates.find((candidate) => candidate.id === state.ending!.selectedMotherId)!;
     const correct = demoCase.candidates.find((candidate) => candidate.id === demoCase.motherId)!;
     ending.replaceChildren();
-    const panel = element("div", "ending-panel");
+    const panel = element("div", `ending-panel ${state.ending.correct ? "is-correct" : "is-wrong"}`);
     panel.append(
       element("span", "ending-kicker", state.ending.correct ? "找到妈妈" : "认错了"),
       element("h1", "ending-title", state.ending.correct ? `${correct.name}张开双臂` : `${selected.name}轻轻摇头`),
@@ -300,21 +486,90 @@ export function createHud(options: {
     ending.append(panel);
   }
 
-  function openInvestigation(npcId = lastState?.nearbyNpcId): void {
-    if (!lastState || !npcId) return;
-    const npc = demoCase.npcs.find((candidate) => candidate.id === npcId)!;
-    const available = agentOrder.filter((id) => lastState!.agents[id].mode === "following" && lastState!.agents[id].fatigue < 90);
-    const initial = lastState.selectedAgentId && available.includes(lastState.selectedAgentId) ? [lastState.selectedAgentId] : available.slice(0, 1);
-    modalState = { type: "investigate", npcId, agentIds: initial, topic: npc.topics[0] };
-    renderModal();
-  }
+  function renderWorldOverlays(overlays: WorldOverlays): void {
+    const visibleBubbles = new Set<string>();
+    overlays.bubbles.forEach((overlay) => {
+      const key = `${overlay.targetType}:${overlay.targetId}`;
+      visibleBubbles.add(key);
+      let button = bubbleButtons.get(key);
+      if (!button) {
+        const action = overlay.targetType === "npc"
+          ? "world-dialogue"
+          : overlay.targetType === "obstacle"
+            ? "world-cleanup"
+            : "world-scout-gate";
+        button = actionButton("", action, `world-bubble world-bubble--${overlay.targetType}`);
+        button.dataset.targetId = overlay.targetId;
+        button.append(element("strong"), element("span"));
+        bubbleLayer.append(button);
+        bubbleButtons.set(key, button);
+      }
+      requireElement<HTMLElement>(button, "strong").textContent = overlay.label;
+      requireElement<HTMLElement>(button, "span").textContent = overlay.detail;
+      button.style.left = `${overlay.x}px`;
+      button.style.top = `${overlay.y}px`;
+      button.hidden = false;
+    });
+    bubbleButtons.forEach((button, key) => { button.hidden = !visibleBubbles.has(key); });
 
-  function openCleanup(obstacleId = lastState?.nearbyObstacleId): void {
-    if (!lastState || !obstacleId) return;
-    const available = agentOrder.filter((id) => lastState!.agents[id].mode === "following" && lastState!.agents[id].fatigue < 90);
-    const initial = lastState.selectedAgentId && available.includes(lastState.selectedAgentId) ? [lastState.selectedAgentId] : available.slice(0, 1);
-    modalState = { type: "cleanup", obstacleId, agentIds: initial };
-    renderModal();
+    const visibleProgress = new Set<AgentId>();
+    overlays.progress.forEach((overlay) => {
+      visibleProgress.add(overlay.agentId);
+      let bar = progressBars.get(overlay.agentId);
+      if (!bar) {
+        bar = element("div", "agent-task-progress");
+        bar.append(element("span"), element("i", "agent-task-progress__track", ""));
+        requireElement<HTMLElement>(bar, ".agent-task-progress__track").append(element("b"));
+        progressLayer.append(bar);
+        progressBars.set(overlay.agentId, bar);
+      }
+      requireElement<HTMLElement>(bar, "span").textContent = overlay.label;
+      bar.style.left = `${overlay.x}px`;
+      bar.style.top = `${overlay.y}px`;
+      bar.style.setProperty("--task-progress", `${Math.round(overlay.value * 100)}%`);
+      bar.hidden = false;
+    });
+    progressBars.forEach((bar, id) => { bar.hidden = !visibleProgress.has(id); });
+
+    const visibleUtterances = new Set<AgentId>();
+    overlays.utterances.forEach((overlay) => {
+      visibleUtterances.add(overlay.agentId);
+      let bubble = speechBubbles.get(overlay.agentId);
+      if (!bubble) {
+        bubble = element("div", "agent-speech-bubble");
+        speechLayer.append(bubble);
+        speechBubbles.set(overlay.agentId, bubble);
+      }
+      bubble.textContent = overlay.text;
+      bubble.dataset.kind = overlay.kind;
+      bubble.style.left = `${overlay.x}px`;
+      bubble.style.top = `${overlay.y}px`;
+      bubble.hidden = false;
+    });
+    speechBubbles.forEach((bubble, id) => { bubble.hidden = !visibleUtterances.has(id); });
+
+    const visibleFrogIndicators = new Set<FrogId>();
+    overlays.frogIndicators.forEach((overlay) => {
+      visibleFrogIndicators.add(overlay.frogId);
+      let indicator = frogDirectionIndicators.get(overlay.frogId);
+      if (!indicator) {
+        indicator = element("div", "frog-direction-indicator");
+        indicator.append(
+          element("span", "frog-direction-indicator__arrow", "↑"),
+          element("span", "frog-direction-indicator__face", ""),
+        );
+        frogDirectionLayer.append(indicator);
+        frogDirectionIndicators.set(overlay.frogId, indicator);
+      }
+      indicator.style.left = `${overlay.x}px`;
+      indicator.style.top = `${overlay.y}px`;
+      indicator.style.setProperty("--frog-accent", "#d94f55");
+      requireElement<HTMLElement>(indicator, ".frog-direction-indicator__arrow").style.transform = `rotate(${overlay.angle}deg)`;
+      indicator.title = overlay.label;
+      indicator.setAttribute("aria-label", overlay.label);
+      indicator.hidden = false;
+    });
+    frogDirectionIndicators.forEach((indicator, id) => { indicator.hidden = !visibleFrogIndicators.has(id); });
   }
 
   function openDiscussion(): void {
@@ -328,7 +583,7 @@ export function createHud(options: {
   }
 
   function openMotherChoice(frogId = lastState?.nearbyFrogId): void {
-    if (!frogId) return;
+    if (!frogId || !lastState?.candidateFrogsRevealed) return;
     modalState = { type: "mother", frogId };
     renderModal();
   }
@@ -337,43 +592,18 @@ export function createHud(options: {
     const state = lastState;
     if (!modalState || !state) { modalLayer.hidden = true; return; }
     modalLayer.hidden = false;
+    modalLayer.dataset.modalType = modalState.type;
     modalContent.replaceChildren();
     const close = actionButton("×", "modal-close", "icon-button icon-button--plain modal-close");
     close.setAttribute("aria-label", "关闭");
     const header = element("header", "modal-header");
+    const titleBlock = element("div", "modal-title-block");
+    titleBlock.append(element("span", "modal-kicker", "现场记录"));
     const title = element("h2");
     title.id = "modal-title";
-    header.append(title, close);
+    titleBlock.append(title);
+    header.append(titleBlock, close);
     modalContent.append(header);
-
-    if (modalState.type === "investigate") {
-      const current = modalState;
-      const npc = demoCase.npcs.find((candidate) => candidate.id === current.npcId)!;
-      title.textContent = `调查 ${npc.name}`;
-      modalContent.append(element("p", "modal-intro", "选择 1-3 只蝌蚪。它们会分别理解同一段听不见的对话。"));
-      modalContent.append(agentSegments(state, current.agentIds, 3));
-      const topics = element("div", "choice-list");
-      npc.topics.forEach((topic) => {
-        const button = actionButton("", "investigation-topic", `choice-row${current.topic === topic ? " is-active" : ""}`);
-        button.dataset.topic = topic;
-        button.append(element("strong", "", topicLabels[topic]), element("span", "", topicHints[topic]));
-        topics.append(button);
-      });
-      const confirm = actionButton(`派出 ${current.agentIds.length} 只蝌蚪`, "investigation-confirm", "text-button text-button--green modal-confirm");
-      confirm.disabled = current.agentIds.length === 0;
-      modalContent.append(topics, confirm);
-    }
-
-    if (modalState.type === "cleanup") {
-      const current = modalState;
-      const obstacle = demoCase.obstacles.find((candidate) => candidate.id === current.obstacleId)!;
-      title.textContent = `清理 ${obstacle.name}`;
-      modalContent.append(element("p", "modal-intro", `${obstacle.description}。可分配 1-2 只蝌蚪，合适性格或协作会更快。`));
-      modalContent.append(agentSegments(state, current.agentIds, 2));
-      const confirm = actionButton(`开始清理 · +${obstacle.reward} 灵感`, "cleanup-confirm", "text-button text-button--yellow modal-confirm");
-      confirm.disabled = current.agentIds.length === 0;
-      modalContent.append(confirm);
-    }
 
     if (modalState.type === "discussion") {
       const current = modalState;
@@ -405,8 +635,8 @@ export function createHud(options: {
       const current = modalState;
       const frog = demoCase.candidates.find((candidate) => candidate.id === current.frogId)!;
       const sourceCount = confirmedSourceCount(state);
-      title.textContent = frog.name;
-      modalContent.append(element("p", "mother-description", frog.description));
+      title.textContent = state.generatedCast?.frogs[current.frogId]?.name ?? frog.name;
+      modalContent.append(element("p", "mother-description", state.generatedCast?.frogs[current.frogId]?.appearance ?? frog.description));
       if (sourceCount < 2) {
         modalContent.append(element("div", "mother-dialogue", "“你们一路辛苦了。再听听不同朋友怎么说吧，我不想让你们只凭第一印象决定。”"));
         modalContent.append(element("p", "modal-intro", `目前只有 ${sourceCount}/2 个独立来源完成对证。`));
@@ -417,31 +647,31 @@ export function createHud(options: {
     }
   }
 
-  function agentSegments(state: Readonly<GameState>, selectedIds: AgentId[], max: number): HTMLElement {
-    const group = element("div", "agent-choice-grid");
-    agentOrder.forEach((id) => {
-      const agent = state.agents[id];
-      const button = actionButton("", "modal-agent-toggle", "agent-choice");
-      button.dataset.agentId = id;
-      button.style.setProperty("--agent-color", colorHex(agentMarkerColors[id]));
-      button.disabled = (agent.mode !== "following" || agent.fatigue >= 90) && !selectedIds.includes(id);
-      button.setAttribute("aria-pressed", String(selectedIds.includes(id)));
-      button.append(element("strong", "", agent.name), element("span", "", `${personalityLabels[agent.personality]} · 疲劳 ${agent.fatigue}%`));
-      group.append(button);
-    });
-    group.dataset.limit = String(max);
-    return group;
+  function toggleEvidence(): void {
+    if (!lastState) return;
+    evidenceOpen = !evidenceOpen;
+    if (evidenceOpen) drawerOpen = false;
+    renderCurrent();
   }
 
-  function toggleDetails(): void {
-    if (!lastState?.selectedAgentId) return;
+  function toggleMemory(): void {
+    if (!lastState) return;
+    if (!lastState.selectedAgentId) {
+      options.onSelect(agentOrder[0]!);
+      drawerOpen = true;
+      evidenceOpen = false;
+      renderCurrent();
+      return;
+    }
     drawerOpen = !drawerOpen;
+    if (drawerOpen) evidenceOpen = false;
     renderCurrent();
   }
 
   function closeModal(): void {
     modalState = null;
     modalLayer.hidden = true;
+    delete modalLayer.dataset.modalType;
     modalContent.replaceChildren();
   }
 
@@ -451,14 +681,17 @@ export function createHud(options: {
 
   return {
     render,
-    toggleDetails,
-    openInvestigation,
-    openCleanup,
+    renderWorldOverlays,
+    toggleEvidence,
+    toggleMemory,
     openMotherChoice,
     closeModal,
     dispose() {
       options.root.removeEventListener("click", onRootClick);
       modalLayer.removeEventListener("click", onBackdropClick);
+      closeSettings();
+      hidePrompt();
+      if (candidateRevealTimer !== undefined) window.clearTimeout(candidateRevealTimer);
     },
   };
 }
@@ -478,20 +711,54 @@ function renderSquadMember(button: HTMLButtonElement, state: Readonly<GameState>
   });
   const fatigue = requireElement<HTMLElement>(button, ".fatigue-mini");
   fatigue.style.setProperty("--fatigue", `${agent.fatigue}%`);
-  button.classList.toggle("is-selected", state.selectedAgentId === agentId);
+  const selected = selectedAgentIds(state).includes(agentId);
+  button.classList.toggle("is-selected", selected);
   button.classList.toggle("is-away", Boolean(agent.activeTask));
   button.classList.toggle("is-tired", agent.fatigue >= 70);
-  button.setAttribute("aria-pressed", String(state.selectedAgentId === agentId));
+  button.dataset.personality = agent.personality;
+  button.dataset.mode = agent.mode;
+  button.dataset.memoryCount = String(agent.memories.filter(Boolean).length);
+  button.setAttribute("aria-pressed", String(selected));
   button.setAttribute("aria-label", `${agent.name} ${personalityLabels[agent.personality]} ${modeLabels[agent.mode]} ${agent.memories.filter(Boolean).length}条记忆`);
 }
 
+function selectedAgentIds(state: Readonly<GameState>): AgentId[] {
+  return state.selectedAgentIds.length > 0 ? [...state.selectedAgentIds] : state.selectedAgentId ? [state.selectedAgentId] : [];
+}
+
 function memoryRow(memory: Memory | null, index: number): HTMLElement {
-  const row = element("article", `memory-row${memory ? " has-memory" : ""}`);
+  const confidenceClass = memory ? ` memory-row--${memory.confidence}` : " memory-row--empty";
+  const row = element("article", `memory-row${memory ? " has-memory" : ""}${confidenceClass}`);
   row.append(element("span", "memory-index", String(index + 1)));
   if (!memory) { row.append(element("span", "memory-empty", "空记忆槽")); return row; }
   const copy = element("div", "memory-copy");
-  copy.append(element("strong", "", memory.summary), element("span", "", `${topicLabels[memory.topic]} · ${memory.rememberedSource} · ${confidenceLabel(memory.confidence)}`));
+  const fidelity = memory.fidelity === "detailed" ? "细节完整" : memory.fidelity === "compressed" ? "像被精简过" : "只剩片段";
+  const transmission = memory.transmission === "mixed" ? "混合记忆" : memory.transmission === "retold" ? "同伴转述" : "亲自听闻";
+  const strength = memory.strength > 70 ? "清晰" : memory.strength > 35 ? "正在变淡" : "模糊";
+  copy.append(
+    element("strong", "", memory.summary),
+    element("span", "", `${topicLabels[memory.topic]} · ${memory.rememberedSource} · ${confidenceLabel(memory.confidence)}`),
+    element("small", "memory-provenance", `${transmission} · ${fidelity} · ${strength}`),
+  );
   row.append(copy);
+  return row;
+}
+
+function evidenceRow(event: EvidenceEvent, state: Readonly<GameState>): HTMLElement {
+  const kindLabels: Record<EvidenceEvent["kind"], string> = {
+    investigation: "现场听闻",
+    discussion: "蝌蚪对证",
+    cleanup: "清理发现",
+    ability: "能力线索",
+  };
+  const row = element("article", "evidence-note");
+  const agents = event.agentIds.map((agentId) => state.agents[agentId].name).join("、");
+  const topic = event.topic ? ` · ${topicLabels[event.topic]}` : "";
+  row.append(
+    element("span", "evidence-note__kicker", `${kindLabels[event.kind]}${topic}`),
+    element("strong", "", event.summary),
+    element("small", "", `${event.sourceLabel} · ${agents || "小队记录"}`),
+  );
   return row;
 }
 

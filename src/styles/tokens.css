@@ -1,21 +1,40 @@
+@font-face {
+  font-family: "HuiWenMingChao";
+  src: url("../assets/fonts/HuiWenMingChao.ttf") format("truetype");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
 :root {
-  font-family: Inter, ui-rounded, "SF Pro Rounded", "PingFang SC", "Microsoft YaHei", sans-serif;
-  color: #163e46;
-  background: #58c8cf;
+  font-family: "HuiWenMingChao", "Avenir Next Rounded", "Trebuchet MS", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #294943;
+  background: #61c9d0;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #163e46;
-  --ink-soft: #4e6d70;
-  --paper: #fff9df;
-  --paper-cool: #e6f5ec;
-  --line: rgba(22, 62, 70, 0.2);
-  --yellow: #f3ce5a;
-  --green: #65bf72;
-  --cyan: #67cdd3;
-  --coral: #e87866;
-  --pink: #ee98aa;
-  --blue: #8fc7de;
-  --shadow: 0 8px 22px rgba(22, 62, 70, 0.18);
+  --ink: #294943;
+  --ink-deep: #173b37;
+  --ink-soft: #58716b;
+  --paper: #fff1c9;
+  --paper-light: #fff8df;
+  --paper-cool: #dff2dc;
+  --paper-shadow: #e7cf9c;
+  --line: rgba(41, 73, 67, 0.26);
+  --yellow: #f5c84c;
+  --yellow-deep: #d99b2e;
+  --green: #70c873;
+  --green-deep: #31945c;
+  --cyan: #64cad1;
+  --cyan-deep: #398fa0;
+  --coral: #ee7c60;
+  --coral-deep: #b9574f;
+  --pink: #ed9bb1;
+  --pink-deep: #a94f78;
+  --blue: #8fc8df;
+  --berry: #8065a8;
+  --white: #fffdf0;
+  --shadow: 4px 6px 0 rgba(23, 59, 55, 0.3);
+  --shadow-soft: 3px 4px 0 rgba(23, 59, 55, 0.18);
 }
 
 * { box-sizing: border-box; }
@@ -32,9 +51,11 @@ body,
 button,
 kbd { font: inherit; }
 
+button { -webkit-tap-highlight-color: transparent; }
+
 button:focus-visible {
-  outline: 3px solid rgba(255, 249, 223, 0.95);
-  outline-offset: 2px;
+  outline: 3px solid var(--white);
+  outline-offset: 3px;
 }
 
 [hidden] { display: none !important; }

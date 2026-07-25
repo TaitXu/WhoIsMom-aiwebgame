@@ -110,6 +110,7 @@ index.html
 | `src/ai/contracts.ts` | 定义三类 AI 请求/响应并严格校验任务类型、枚举、长度和允许引用的 ID。 |
 | `src/ai/agentService.ts` | AI 服务门面。优先调用远端适配器，网络或校验失败时切换到本地回退。 |
 | `src/ai/remoteAgentAdapter.ts` | 调用 `/api/agent`，处理超时、响应解析、结果校验和同请求缓存。 |
+| `src/ai/llmConfig.ts` | 保存默认/自定义模型模式；只在自定义模式保存玩家自己的 Base URL、模型名和 Key。 |
 | `src/ai/localAgentFallback.ts` | 确定性 Agent。模拟性格化信息遗漏、雨林语境纠错、记忆对证和跳跃学习差异。 |
 
 AI 输出只是一份认知建议。记忆写入位置、任务合法性、来源是否计入证据和最终胜负仍由本地规则决定。
@@ -126,7 +127,7 @@ AI 输出只是一份认知建议。记忆写入位置、任务合法性、来�
 | `src/render/characterFactory.ts` | 生成领路小鱼、三只蝌蚪、蜻蜓、蚱蜢、乌龟、河蟹和三种候选青蛙，附带配饰、假阴影、描边和交互标记。 |
 | `src/render/characterView.ts` | 封装角色 Group、选中/高亮/模式状态与自然过渡的程序动画。 |
 | `src/render/viewRegistry.ts` | 定义领域 ID 到角色视图的映射。 |
-| `src/render/adapters/worldBridge.ts` | 状态与 3D 世界的桥：玩家导航、区域判定、接近高亮、自主调查、任务移动、疲劳跟随、门禁、结局站位和调试传送。 |
+| `src/render/adapters/worldBridge.ts` | 状态与 3D 世界的桥：玩家导航、角色软分离、多候选局部滑行、卡住恢复、区域判定、任务移动、门禁和调试传送。 |
 | `src/render/geometry.ts` | 小型几何与 Mesh 公共设置辅助。 |
 
 渲染层只读取状态并表达结果，因此将程序化模型替换为 GLTF 不需要重写领域规则。
@@ -136,7 +137,7 @@ AI 输出只是一份认知建议。记忆写入位置、任务合法性、来�
 | 文件 | 职责 |
 | --- | --- |
 | `src/input/keyboardController.ts` | WASD/方向键、1-3 选择、R 召回、M/Tab 记忆、Escape 和触控方向输入。 |
-| `src/input/pointerController.ts` | 用 Raycaster 识别角色、NPC、青蛙、障碍和门；点击水面时生成移动目标。 |
+| `src/input/pointerController.ts` | 用 Raycaster 识别角色、青蛙、障碍和门；NPC 另有固定像素热区，点击水面时生成移动目标。 |
 | `src/ui/createHud.ts` | 渲染区域、灵感、确认来源、地图、小队、疲劳、动态记忆槽、调查、清理、对证、教学、妈妈对话和结局。 |
 | `src/diagnostics/createDebugPanel.ts` | 仅在 `?debug=1` 时显示六个区域跳转按钮，便于试玩验收。 |
 | `src/styles/tokens.css` | 全局字体、色彩 Token、边框、阴影、reset 和焦点样式。 |

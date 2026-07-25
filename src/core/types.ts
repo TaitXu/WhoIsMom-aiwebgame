@@ -1,6 +1,32 @@
 export type AgentId = "modian" | "xiaolang" | "paopao";
 export type NpcId = "dragonfly" | "turtle" | "crab" | "grasshopper";
 export type FrogId = "tree-frog" | "bullfrog" | "marsh-frog";
+export type FrogBodyTone = "blue-green" | "olive-green" | "olive-brown";
+export type FrogBellyTone = "cream" | "warm-yellow";
+export type FrogEyeTone = "red-brown" | "amber";
+export type FrogMarkingPattern = "sparse-dark" | "dense-light";
+export type FrogHeadAdornment = "leaf-hat" | "reed-crown";
+export type FrogRedAdornment = "ankle-ribbons" | "scarf" | "flower-pin";
+export type FrogHindLegShape = "slender" | "sturdy";
+export type FrogFeatures = Readonly<{
+  bodyTone: FrogBodyTone;
+  bellyTone: FrogBellyTone;
+  eyeTone: FrogEyeTone;
+  markingPattern: FrogMarkingPattern;
+  headAdornment: FrogHeadAdornment;
+  redAdornment: FrogRedAdornment;
+  hindLegShape: FrogHindLegShape;
+}>;
+export type FrogFeatureVocabulary = Readonly<{
+  bodyTone: readonly FrogBodyTone[];
+  bellyTone: readonly FrogBellyTone[];
+  eyeTone: readonly FrogEyeTone[];
+  markingPattern: readonly FrogMarkingPattern[];
+  headAdornment: readonly FrogHeadAdornment[];
+  redAdornment: readonly FrogRedAdornment[];
+  hindLegShape: readonly FrogHindLegShape[];
+}>;
+export type FrogFeatureConstraints = Readonly<Partial<Record<FrogId, Readonly<Partial<FrogFeatures>>>>>;
 export type RegionId =
   | "rainleaf-pool"
   | "dragonfly-shoal"
@@ -36,10 +62,20 @@ export type AgentMode =
   | "tired";
 
 export type Personality = "cautious" | "impulsive" | "social";
+export type CommunicationStyle = "literal" | "embellishing" | "agreeable";
 export type Emotion = "calm" | "excited" | "afraid";
 export type MemoryConfidence = "believed" | "questioned" | "confirmed";
+export type MemoryFidelity = "detailed" | "compressed" | "fragmented";
+export type MemoryTransmission = "direct" | "retold" | "mixed";
+export type NpcReliability = "steady" | "contextual" | "rumor-prone";
+export type NpcIntimidation = "none" | "mild" | "high";
 export type AgentResultSource = "model" | "fallback";
 export type JumpKnowledge = "none" | "partial" | "learned";
+
+export type GeneratedCast = Readonly<{
+  agents: Record<AgentId, Readonly<{ name: string; personality: Personality; introduction: string }>>;
+  frogs: Record<FrogId, Readonly<{ name: string; appearance: string; features: FrogFeatures }>>;
+}>;
 
 export type Fact = Readonly<{
   id: FactId;
@@ -48,6 +84,8 @@ export type Fact = Readonly<{
   time?: string;
   place?: string;
   source?: string;
+  veracity?: "true" | "contextual" | "false";
+  requiresAnyFactIds?: FactId[];
 }>;
 
 export type Memory = Readonly<{
@@ -57,11 +95,22 @@ export type Memory = Readonly<{
   summary: string;
   rememberedSource: string;
   sourceNpcId: NpcId;
+  sourceNpcIds: NpcId[];
   emotion: Emotion;
   confidence: MemoryConfidence;
+  fidelity: MemoryFidelity;
+  transmission: MemoryTransmission;
+  strength: number;
   createdAt: number;
   reinforced: boolean;
+  parentMemoryIds?: MemoryId[];
   resultSource: AgentResultSource;
+}>;
+
+export type AgentUtterance = Readonly<{
+  text: string;
+  kind: "idle" | "autonomous" | "peer" | "tired";
+  expiresAt: number;
 }>;
 
 export type InvestigationTask = Readonly<{
@@ -70,6 +119,7 @@ export type InvestigationTask = Readonly<{
   npcId: NpcId;
   topic: Topic;
   autonomous: boolean;
+  viaGateId?: GateId;
 }>;
 
 export type CleanupTask = Readonly<{
@@ -85,12 +135,15 @@ export type AgentState = {
   id: AgentId;
   name: string;
   personality: Personality;
+  communicationStyle: CommunicationStyle;
   mode: AgentMode;
   memories: Array<Memory | null>;
   memoryCapacity: 3 | 4 | 5;
   fatigue: number;
   jumpKnowledge: JumpKnowledge;
+  utterance?: AgentUtterance;
   activeTask?: AgentTask;
+  returnGateId?: GateId;
 };
 
 export type GamePhase = "explore" | "ending";
@@ -99,6 +152,7 @@ export type DiscussionState = Readonly<{
   id: string;
   agentIds: [AgentId, AgentId];
   topic: Topic;
+  autonomous: boolean;
 }>;
 
 export type EvidenceEvent = Readonly<{
@@ -122,6 +176,7 @@ export type GameState = {
   sessionSeed: number;
   inspiration: number;
   selectedAgentId?: AgentId;
+  selectedAgentIds: AgentId[];
   currentRegionId: RegionId;
   discoveredRegionIds: RegionId[];
   discoveredEntityIds: string[];
@@ -132,7 +187,9 @@ export type GameState = {
   nearbyObstacleId?: ObstacleId;
   nearbyGateId?: GateId;
   atRestSpot: boolean;
+  candidateFrogsRevealed: boolean;
   agents: Record<AgentId, AgentState>;
+  generatedCast?: GeneratedCast;
   objective: string;
   evidenceLog: EvidenceEvent[];
   discussion?: DiscussionState;
@@ -149,6 +206,7 @@ export type MemoryUpdate = Readonly<{
 
 export type GameCommand =
   | { type: "SELECT_AGENT"; agentId?: AgentId }
+  | { type: "SELECT_AGENTS"; agentIds: AgentId[] }
   | {
       type: "UPDATE_WORLD_CONTEXT";
       regionId: RegionId;
@@ -160,6 +218,9 @@ export type GameCommand =
       discoveredEntityIds: string[];
     }
   | { type: "START_INVESTIGATION"; agentId: AgentId; task: InvestigationTask }
+  | { type: "START_GATE_SCOUT"; agentId: AgentId; task: InvestigationTask; gateId: GateId }
+  | { type: "FINISH_GATE_JUMP"; agentId: AgentId; taskId: string }
+  | { type: "RESUME_INVESTIGATION"; agentId: AgentId; taskId: string }
   | { type: "BEGIN_INTERACTION"; agentId: AgentId; taskId: string }
   | {
       type: "COMPLETE_INVESTIGATION";
@@ -167,6 +228,14 @@ export type GameCommand =
       taskId: string;
       memory: Memory;
       slot: number;
+      evidence: EvidenceEvent;
+      fatigue: number;
+    }
+  | {
+      type: "FAIL_INVESTIGATION";
+      agentId: AgentId;
+      taskId: string;
+      forgetMemoryId?: MemoryId;
       evidence: EvidenceEvent;
       fatigue: number;
     }
@@ -186,7 +255,12 @@ export type GameCommand =
   | { type: "MARK_GATE_SCOUTED"; gateId: GateId }
   | { type: "UPGRADE_MEMORY"; agentId: AgentId }
   | { type: "REST_SQUAD" }
+  | { type: "ADD_FATIGUE"; agentIds: AgentId[]; amount: number; reason: "movement" | "conversation" }
+  | { type: "DECAY_MEMORIES"; amount: number }
+  | { type: "STORE_MEMORY"; agentId: AgentId; memory: Memory; slot: number }
+  | { type: "SET_AGENT_UTTERANCE"; agentId: AgentId; utterance: AgentUtterance }
   | { type: "RECALL_AGENT"; agentId: AgentId }
+  | { type: "FINISH_GATE_RETURN"; agentId: AgentId; gateId: GateId }
   | { type: "FINISH_RETURN"; agentId: AgentId }
   | { type: "START_DISCUSSION"; discussion: DiscussionState }
   | {
@@ -196,5 +270,8 @@ export type GameCommand =
       evidence: EvidenceEvent;
     }
   | { type: "SET_OBJECTIVE"; objective: string }
+  | { type: "APPLY_GENERATED_CAST"; cast: GeneratedCast }
+  | { type: "REVEAL_CANDIDATE_FROGS" }
   | { type: "CHOOSE_MOTHER"; frogId: FrogId; correct: boolean }
+  | { type: "DEMO_ENDING"; frogId: FrogId; correct: boolean }
   | { type: "RESET_GAME" };

@@ -9,10 +9,20 @@ export interface EnvironmentView {
   obstacles: Record<ObstacleId, THREE.Group>;
   gates: Record<GateId, THREE.Group>;
   restPosition: THREE.Vector3;
+  colliders: readonly TerrainCollider[];
   update(elapsed: number): void;
   setObstacleCleared(id: ObstacleId, cleared: boolean): void;
   setGateOpen(id: GateId, open: boolean): void;
+  canOccupy(position: THREE.Vector3, radius: number): boolean;
 }
+
+export type TerrainCollider = Readonly<{
+  centerX: number;
+  centerZ: number;
+  radiusX: number;
+  radiusZ: number;
+  rotation: number;
+}>;
 
 interface WaterHighlights {
   mesh: THREE.InstancedMesh;
@@ -22,28 +32,23 @@ interface WaterHighlights {
   dummy: THREE.Object3D;
 }
 
-const waterTones = [0x5bcbd0, 0x50c2cd, 0x65ced0, 0x55c8c5, 0x62ccd1, 0x4dbbc5, 0x68c9c1, 0x59c9c8, 0x48bcb7];
-
 export function buildEnvironment(palette: MaterialPalette): EnvironmentView {
   const group = new THREE.Group();
   group.name = "nine-region-wetland";
+  const colliders: TerrainCollider[] = [];
 
-  const base = new THREE.Mesh(new THREE.PlaneGeometry(58, 58), palette.toon(worldColors.waterDeep));
+  // Keep the visible water larger than the playable area so the current
+  // boundary fades into the scene instead of reading as a square platform.
+  const base = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), palette.toon(worldColors.waterDeep));
   base.rotation.x = -Math.PI / 2;
   base.position.y = -0.13;
   group.add(base);
 
   demoCase.regions.forEach((region, index) => {
-    const tile = new THREE.Mesh(new THREE.PlaneGeometry(17.8, 17.8), palette.toon(waterTones[index]!));
-    tile.rotation.x = -Math.PI / 2;
-    tile.position.set(region.center[0], -0.08, region.center[2]);
-    tile.name = `region-${region.id}`;
-    group.add(tile);
-    addRegionBanks(group, palette, region.center[0], region.center[2], index);
+    addRegionBanks(group, palette, region.center[0], region.center[2], index, colliders);
     addLandmark(group, palette, region.landmark, region.center[0], region.center[2], region.accentColor);
   });
 
-  addOuterBank(group, palette);
   addInstancedReeds(group, palette);
   addInstancedPebbles(group, palette);
   const highlights = addWaterHighlights(group, palette);
@@ -91,10 +96,18 @@ export function buildEnvironment(palette: MaterialPalette): EnvironmentView {
     obstacles,
     gates,
     restPosition,
+    colliders,
     update(elapsed) {
       updateWaterHighlights(highlights, elapsed);
       Object.values(obstacles).forEach((obstacle, index) => {
         obstacle.rotation.y = Math.sin(elapsed * 0.8 + index) * 0.035;
+        const marker = obstacle.userData.marker as THREE.Group | undefined;
+        if (marker) {
+          marker.position.y = 1.25 + Math.sin(elapsed * 2.6 + index) * 0.08;
+          marker.rotation.y = elapsed * 1.2 + index;
+          const pulse = 1 + Math.sin(elapsed * 3.2 + index) * 0.08;
+          marker.scale.setScalar(pulse);
+        }
       });
     },
     setObstacleCleared(id, cleared) {
@@ -105,41 +118,58 @@ export function buildEnvironment(palette: MaterialPalette): EnvironmentView {
       if (blocker) blocker.visible = !open;
       gates[id].userData.open = open;
     },
+    canOccupy(position, radius) {
+      return colliders.every((collider) => {
+        const cos = Math.cos(collider.rotation);
+        const sin = Math.sin(collider.rotation);
+        const dx = position.x - collider.centerX;
+        const dz = position.z - collider.centerZ;
+        const localX = dx * cos + dz * sin;
+        const localZ = -dx * sin + dz * cos;
+        const radiusX = collider.radiusX + radius;
+        const radiusZ = collider.radiusZ + radius;
+        return (localX / radiusX) ** 2 + (localZ / radiusZ) ** 2 >= 1;
+      });
+    },
   };
 }
 
-function addRegionBanks(world: THREE.Group, palette: MaterialPalette, x: number, z: number, index: number): void {
+function addRegionBanks(
+  world: THREE.Group,
+  palette: MaterialPalette,
+  x: number,
+  z: number,
+  index: number,
+  colliders: TerrainCollider[],
+): void {
   const offsets: Array<[number, number, number, number]> = [
     [-6.4, -5.8, 2.7, 2.2],
     [6.1, 5.7, 2.4, 2.8],
   ];
   offsets.forEach(([ox, oz, sx, sz], localIndex) => {
+    const depthLift = (index * 2 + localIndex) * 0.0025;
     const bank = new THREE.Mesh(new THREE.CircleGeometry(2.2, 9), palette.toon(localIndex === 0 ? worldColors.bank : worldColors.bankLight));
     bank.rotation.x = -Math.PI / 2;
-    bank.position.set(x + ox, -0.045, z + oz);
+    bank.position.set(x + ox, -0.045 + depthLift, z + oz);
     bank.scale.set(sx, sz, 1);
     bank.rotation.z = (index * 0.47 + localIndex) % Math.PI;
+    bank.renderOrder = 0;
     world.add(bank);
+    colliders.push({
+      centerX: x + ox,
+      centerZ: z + oz,
+      radiusX: 2.2 * sx + 0.32,
+      radiusZ: 2.2 * sz + 0.32,
+      rotation: bank.rotation.z,
+    });
     const grass = new THREE.Mesh(new THREE.CircleGeometry(1.8, 9), palette.toon(index % 2 === 0 ? worldColors.grass : 0x69bd61));
     grass.rotation.x = -Math.PI / 2;
-    grass.position.set(x + ox * 1.02, -0.025, z + oz * 1.02);
+    grass.position.set(x + ox * 1.02, -0.025 + depthLift, z + oz * 1.02);
     grass.scale.set(sx * 0.9, sz * 0.86, 1);
     grass.rotation.z = bank.rotation.z;
+    grass.renderOrder = 1;
     world.add(grass);
   });
-}
-
-function addOuterBank(world: THREE.Group, palette: MaterialPalette): void {
-  const material = palette.toon(worldColors.grass);
-  const north = new THREE.Mesh(new THREE.BoxGeometry(58, 0.4, 2), material);
-  north.position.set(0, -0.18, -28);
-  const south = north.clone();
-  south.position.z = 28;
-  const west = new THREE.Mesh(new THREE.BoxGeometry(2, 0.4, 54), material);
-  west.position.set(-28, -0.18, 0);
-  const east = west.clone();
-  east.position.x = 28;
-  world.add(north, south, west, east);
 }
 
 function addLandmark(world: THREE.Group, palette: MaterialPalette, type: string, x: number, z: number, accent: number): void {
@@ -278,20 +308,47 @@ function updateWaterHighlights(highlights: WaterHighlights, elapsed: number): vo
 
 function createObstacle(id: ObstacleId, palette: MaterialPalette): THREE.Group {
   const group = new THREE.Group();
-  const warm = palette.toon(id === "driftwood-jam" ? 0xa8684e : id === "petal-drift" ? worldColors.pink : 0x4f9d63);
+  const warm = palette.toon(
+    id === "driftwood-jam" ? 0xb76545
+      : id === "petal-drift" ? 0xf07f9a
+        : id === "silt-bubbles" ? 0x8f69c5
+          : id === "lily-clutter" ? 0xd6a72e
+            : 0x3f9b5a,
+  );
+  const pieceScale = id === "silt-bubbles" ? 1.35 : id === "petal-drift" ? 1.35 : 1.15;
   for (let index = 0; index < (id === "driftwood-jam" ? 3 : 5); index += 1) {
     const piece = new THREE.Mesh(
-      id === "silt-bubbles" ? new THREE.SphereGeometry(0.28 + index * 0.03, 7, 4) : id === "petal-drift" ? new THREE.CircleGeometry(0.45, 6) : new THREE.CylinderGeometry(0.08, 0.13, 1.4, 5),
+      id === "silt-bubbles" ? new THREE.SphereGeometry((0.28 + index * 0.03) * pieceScale, 7, 4) : id === "petal-drift" ? new THREE.CircleGeometry(0.45 * pieceScale, 6) : new THREE.CylinderGeometry(0.08 * pieceScale, 0.13 * pieceScale, 1.4 * pieceScale, 5),
       warm,
     );
-    piece.position.set((index - 2) * 0.42, id === "silt-bubbles" ? 0.18 : 0.2, Math.sin(index * 1.7) * 0.42);
+    piece.position.set((index - 2) * 0.5, id === "silt-bubbles" ? 0.24 : 0.25, Math.sin(index * 1.7) * 0.5);
     piece.rotation.set(id === "petal-drift" ? -Math.PI / 2 : 0.3, index * 0.8, (index - 2) * 0.24);
     group.add(piece);
   }
-  const ring = new THREE.Mesh(new THREE.RingGeometry(1.15, 1.28, 22), palette.basic(worldColors.accent, { transparent: true, opacity: 0.75, depthWrite: false }));
+  const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.72, 24), palette.basic(worldColors.accent, { transparent: true, opacity: 0.9, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.02;
   group.add(ring);
+
+  // A high-contrast floating marker makes small obstacles legible from the camera.
+  const marker = new THREE.Group();
+  const markerStem = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, 0.9, 6), palette.toon(worldColors.ink));
+  markerStem.position.y = 0.45;
+  marker.add(markerStem);
+  const markerHead = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), palette.toon(worldColors.accent));
+  markerHead.position.y = 0.95;
+  marker.add(markerHead);
+  group.add(marker);
+  group.userData.marker = marker;
+
+  // Invisible interaction volume. This does not change navigation collision.
+  const hitArea = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.9, 1.9, 1.35, 16),
+    palette.basic(worldColors.accent, { transparent: true, opacity: 0, depthWrite: false }),
+  );
+  hitArea.position.y = 0.55;
+  hitArea.userData.interactionOnly = true;
+  group.add(hitArea);
   return group;
 }
 

@@ -1,0 +1,221 @@
+@import url("../base.css");
+
+:root {
+  --black: #172d2c;
+  --cream: #fff3ce;
+  --cyan: #55c4cf;
+  --yellow: #f6cf49;
+  --coral: #ef765f;
+  --green: #79c76d;
+  --pink: #ef9cb2;
+}
+
+.direct-cover {
+  color: var(--black);
+  background: var(--yellow);
+}
+
+.direct-cover::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 58%;
+  height: 100%;
+  background: var(--yellow);
+  clip-path: polygon(0 0, 100% 0, 82% 100%, 0 100%);
+  z-index: 2;
+}
+
+.direct-image {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 58%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(1.15) contrast(1.05);
+}
+
+.direct-copy {
+  position: absolute;
+  z-index: 3;
+  left: 96px;
+  top: 78px;
+  width: 840px;
+}
+
+.direct-copy .eyebrow {
+  display: inline-block;
+  padding: 12px 18px 10px;
+  color: var(--cream);
+  background: var(--black);
+}
+
+.direct-copy h1 {
+  margin: 58px 0 24px;
+  font-family: "Avenir Next", "PingFang SC", sans-serif;
+  font-size: 148px;
+  font-weight: 900;
+  line-height: 0.93;
+}
+
+.direct-copy h1 span { display: block; color: #c84f43; }
+
+.direct-copy .one-line {
+  margin: 0;
+  max-width: 730px;
+  font-size: 39px;
+  line-height: 1.4;
+}
+
+.agent-number {
+  position: absolute;
+  z-index: 4;
+  left: 98px;
+  bottom: 66px;
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+}
+
+.agent-number strong {
+  font-family: "Avenir Next", sans-serif;
+  font-size: 108px;
+  line-height: 0.8;
+}
+
+.agent-number span { font-size: 30px; font-weight: 700; }
+
+.sticker {
+  position: absolute;
+  z-index: 4;
+  right: 72px;
+  top: 64px;
+  width: 210px;
+  height: 210px;
+  display: grid;
+  place-items: center;
+  color: var(--cream);
+  background: var(--coral);
+  border: 8px solid var(--black);
+  border-radius: 50%;
+  font-family: "Avenir Next", sans-serif;
+  font-size: 30px;
+  font-weight: 900;
+  text-align: center;
+  transform: rotate(8deg);
+}
+
+.direct-loop {
+  color: var(--black);
+  background: var(--cream);
+  padding: 68px 78px;
+}
+
+.direct-loop header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.direct-loop h1 {
+  width: 1260px;
+  margin: 0;
+  font-family: "Avenir Next", "PingFang SC", sans-serif;
+  font-size: 84px;
+  font-weight: 900;
+  line-height: 1.06;
+}
+
+.direct-loop .badge {
+  padding: 16px 22px;
+  color: var(--cream);
+  background: var(--black);
+  font-family: "Avenir Next", sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.loop-band {
+  display: grid;
+  grid-template-columns: 0.9fr 1fr 1.05fr 1fr 1.1fr 0.95fr;
+  height: 422px;
+  margin-top: 48px;
+  border: 7px solid var(--black);
+}
+
+.loop-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 34px 28px 30px;
+  border-right: 7px solid var(--black);
+}
+
+.loop-step:last-child { border-right: 0; }
+.loop-step:nth-child(1) { background: var(--cyan); }
+.loop-step:nth-child(2) { background: var(--yellow); }
+.loop-step:nth-child(3) { background: var(--pink); }
+.loop-step:nth-child(4) { background: var(--green); }
+.loop-step:nth-child(5) { background: var(--coral); }
+.loop-step:nth-child(6) { color: var(--cream); background: var(--black); }
+
+.loop-step small {
+  font-family: "Avenir Next", sans-serif;
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.loop-step strong {
+  font-family: "Avenir Next", "PingFang SC", sans-serif;
+  font-size: 51px;
+  line-height: 1;
+}
+
+.loop-step p { margin: 0; font-size: 24px; line-height: 1.3; }
+
+.loop-step:not(:last-child)::after {
+  content: "›";
+  position: absolute;
+  z-index: 3;
+  right: -27px;
+  top: 166px;
+  width: 48px;
+  height: 80px;
+  color: var(--cream);
+  background: var(--black);
+  font-family: "Avenir Next", sans-serif;
+  font-size: 72px;
+  line-height: 70px;
+  text-align: center;
+}
+
+.feedback-rail {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 28px;
+  align-items: center;
+  margin-top: 42px;
+}
+
+.feedback-rail .label {
+  font-family: "Avenir Next", sans-serif;
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.feedback-rail .factors-row {
+  display: flex;
+  gap: 12px;
+}
+
+.factors-row span {
+  flex: 1;
+  padding: 17px 14px 15px;
+  border: 3px solid var(--black);
+  font-size: 24px;
+  text-align: center;
+}
+

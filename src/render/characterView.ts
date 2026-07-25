@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { AgentMode } from "../core/types";
+import type { AgentMode, FrogFeatures } from "../core/types";
 
 export type CharacterView = {
   group: THREE.Group;
@@ -10,6 +10,10 @@ export type CharacterView = {
   setHighlighted(highlighted: boolean): void;
   setMode(mode: AgentMode): void;
   update(elapsed: number, speed: number, delta?: number): void;
+};
+
+export type FrogCharacterView = CharacterView & {
+  applyAppearance(features: FrogFeatures): void;
 };
 
 export function createCharacterView(options: {
@@ -32,6 +36,8 @@ export function createCharacterView(options: {
   let activity = 0;
   let lift = 0;
   let squash = 0;
+  let tailAngle = 0;
+  let tailPhase = phase;
 
   return {
     group,
@@ -62,7 +68,12 @@ export function createCharacterView(options: {
       lift = THREE.MathUtils.damp(lift, targetLift, 10, delta);
       squash = THREE.MathUtils.damp(squash, targetSquash, 9, delta);
       const motionScale = tired ? 0.42 : 0.65 + activity * 0.75 + working * 0.35;
-      tail.rotation.y = Math.sin(elapsed * tailFrequency * motionScale + phase) * tailAmplitude * motionScale;
+      // Advance a continuous phase and damp toward the target angle. Sampling
+      // elapsed time directly made the tail visibly jump when a frame arrived late.
+      tailPhase += delta * tailFrequency * motionScale;
+      const targetTailAngle = Math.sin(tailPhase) * tailAmplitude * motionScale;
+      tailAngle = THREE.MathUtils.damp(tailAngle, targetTailAngle, 14, delta);
+      tail.rotation.y = tailAngle;
       motionRoot.position.y = lift + Math.sin(elapsed * (2.1 + activity * 2.2) + phase) * bobAmplitude * (tired ? 0.35 : 1);
       motionRoot.scale.set(1 + squash * 0.45, 1 - squash, 1 + squash * 0.45);
       group.rotation.z = THREE.MathUtils.damp(group.rotation.z, Math.sin(elapsed * 3 + phase) * 0.035 * activity, 7, delta);

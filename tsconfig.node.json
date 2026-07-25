@@ -16,6 +16,7 @@
     "vitest.config.ts",
     "api",
     "src/ai/contracts.ts",
-    "src/core/types.ts"
+    "src/core/types.ts",
+    "src/game/case/frogFeatures.ts"
   ]
 }

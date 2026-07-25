@@ -1,16 +1,24 @@
 import type { AgentAdapter } from "./agentService";
 import type { AgentRequest, AgentResponse } from "./contracts";
 import { validateAgentResult } from "./contracts";
+import type { LlmConfigStore } from "./llmConfig";
 
 export function createRemoteAgentAdapter(
   endpoint = "/api/agent",
-  timeoutMs = 8_000,
+  timeoutMs = 22_000,
+  configStore?: LlmConfigStore,
 ): AgentAdapter {
   const cache = new Map<string, AgentResponse>();
 
   return {
     async run(request: AgentRequest): Promise<AgentResponse> {
-      const key = JSON.stringify(request);
+      const config = configStore?.get();
+      const key = JSON.stringify({
+        request,
+        mode: config?.mode ?? "default",
+        baseUrl: config?.mode === "custom" ? config.baseUrl : undefined,
+        model: config?.mode === "custom" ? config.model : undefined,
+      });
       const cached = cache.get(key);
       if (cached) return cached;
 
@@ -18,9 +26,19 @@ export function createRemoteAgentAdapter(
       const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        const response = await fetch(endpoint, {
+        const requestEndpoint = endpoint;
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (config?.mode === "custom") {
+          headers["x-llm-mode"] = "custom";
+          if (config.baseUrl) headers["x-model-base-url"] = config.baseUrl;
+          if (config.model) headers["x-model-name"] = config.model;
+          if (config.apiKey) headers["x-model-api-key"] = config.apiKey;
+        } else {
+          headers["x-llm-mode"] = "default";
+        }
+        const response = await fetch(requestEndpoint, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify(request),
           signal: controller.signal,
         });

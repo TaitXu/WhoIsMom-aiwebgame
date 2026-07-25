@@ -1,5 +1,18 @@
 import type { AgentState, Memory, Personality } from "../../core/types";
 
+export function chooseMemoryToForget(
+  agent: Pick<AgentState, "memories" | "memoryCapacity">,
+): Memory | undefined {
+  return agent.memories
+    .slice(0, agent.memoryCapacity)
+    .filter((memory): memory is Memory => Boolean(memory))
+    .sort((left, right) =>
+      Number(left.reinforced) - Number(right.reinforced) ||
+      left.strength - right.strength ||
+      left.createdAt - right.createdAt,
+    )[0];
+}
+
 export function chooseMemorySlot(
   agent: Pick<AgentState, "memories" | "personality" | "memoryCapacity">,
 ): number {

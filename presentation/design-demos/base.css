@@ -1,0 +1,52 @@
+@font-face {
+  font-family: "HuiWenMingChao";
+  src: url("../../src/assets/fonts/HuiWenMingChao.ttf") format("truetype");
+  font-display: swap;
+}
+
+:root { --scale: 1; }
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: #151817;
+  font-family: "HuiWenMingChao", "PingFang SC", "Microsoft YaHei", sans-serif;
+  letter-spacing: 0;
+}
+
+.viewport {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  transform: translate(-50%, -50%) scale(var(--scale));
+  transform-origin: center;
+}
+
+.eyebrow {
+  font-family: "Avenir Next", "PingFang SC", sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.page-no {
+  position: absolute;
+  right: 46px;
+  bottom: 34px;
+  font-family: "Avenir Next", sans-serif;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+

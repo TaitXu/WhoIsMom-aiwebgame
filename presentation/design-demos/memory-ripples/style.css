@@ -1,0 +1,214 @@
+@import url("../base.css");
+
+:root {
+  --paper: #f5f0df;
+  --ink: #183d3b;
+  --muted: #7b857f;
+  --water: #5ebec3;
+  --vermilion: #d86752;
+  --moss: #6fae68;
+}
+
+.ripple-cover {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.ripple-cover::before,
+.ripple-cover::after {
+  content: "";
+  position: absolute;
+  border: 2px solid rgba(24, 61, 59, 0.24);
+  border-radius: 50%;
+}
+
+.ripple-cover::before { width: 760px; height: 760px; right: -130px; top: -210px; }
+.ripple-cover::after { width: 520px; height: 520px; right: -10px; top: -90px; }
+
+.river-window {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 330px;
+  object-fit: cover;
+  object-position: 50% 56%;
+  filter: saturate(0.7) contrast(0.94);
+}
+
+.river-window::after { content: ""; }
+
+.ripple-mast {
+  position: absolute;
+  left: 104px;
+  top: 82px;
+  right: 104px;
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 22px;
+  border-bottom: 1px solid rgba(24, 61, 59, 0.38);
+}
+
+.ripple-mast span { font-size: 21px; }
+
+.ripple-title {
+  position: absolute;
+  left: 104px;
+  top: 190px;
+  width: 1320px;
+}
+
+.ripple-title h1 {
+  margin: 0;
+  font-size: 164px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.ripple-title h1 em {
+  color: var(--vermilion);
+  font-style: normal;
+}
+
+.ripple-title .statement {
+  width: 920px;
+  margin: 40px 0 0;
+  font-size: 39px;
+  line-height: 1.55;
+}
+
+.ghost-memory {
+  position: absolute;
+  color: rgba(24, 61, 59, 0.13);
+  font-size: 92px;
+  white-space: nowrap;
+  transform: rotate(-5deg);
+}
+
+.ghost-memory.one { left: 670px; top: 510px; }
+.ghost-memory.two { left: 910px; top: 610px; color: rgba(216, 103, 82, 0.2); transform: rotate(3deg); }
+
+.ripple-mechanism {
+  color: var(--ink);
+  background: var(--paper);
+  padding: 72px 96px;
+}
+
+.ripple-mechanism header {
+  display: grid;
+  grid-template-columns: 1.35fr 0.65fr;
+  gap: 80px;
+  align-items: end;
+}
+
+.ripple-mechanism h1 {
+  margin: 14px 0 0;
+  font-size: 82px;
+  font-weight: 400;
+  line-height: 1.15;
+}
+
+.ripple-mechanism .summary {
+  margin: 0 0 8px;
+  color: #596b65;
+  font-size: 29px;
+  line-height: 1.55;
+}
+
+.water-system {
+  position: relative;
+  height: 670px;
+  margin-top: 42px;
+  border-top: 1px solid rgba(24, 61, 59, 0.42);
+}
+
+.rings {
+  position: absolute;
+  left: 70px;
+  top: 62px;
+  width: 610px;
+  height: 610px;
+}
+
+.ring {
+  position: absolute;
+  border: 2px solid rgba(94, 190, 195, 0.62);
+  border-radius: 50%;
+}
+
+.ring.r1 { inset: 0; }
+.ring.r2 { inset: 72px; }
+.ring.r3 { inset: 146px; }
+
+.ring-core {
+  position: absolute;
+  inset: 214px;
+  display: grid;
+  place-items: center;
+  color: var(--paper);
+  background: var(--ink);
+  border-radius: 50%;
+  font-size: 33px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.ring-label {
+  position: absolute;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 24px;
+}
+
+.label-personality { left: 14px; top: 112px; }
+.label-fatigue { right: -6px; top: 218px; }
+.label-context { left: 24px; bottom: 118px; }
+.label-partner { right: 42px; bottom: 54px; }
+
+.palimpsest {
+  position: absolute;
+  left: 760px;
+  right: 10px;
+  top: 62px;
+  bottom: 0;
+}
+
+.memory-line {
+  position: relative;
+  display: grid;
+  grid-template-columns: 130px 1fr 210px;
+  align-items: baseline;
+  min-height: 112px;
+  padding: 24px 0 20px;
+  border-bottom: 1px solid rgba(24, 61, 59, 0.28);
+}
+
+.memory-line small {
+  color: var(--muted);
+  font-family: "Avenir Next", sans-serif;
+  font-size: 19px;
+}
+
+.memory-line strong { font-size: 38px; font-weight: 400; }
+.memory-line em { color: var(--muted); font-size: 23px; font-style: normal; text-align: right; }
+.memory-line.fading { opacity: 0.4; }
+.memory-line.overwrite strong { text-decoration: line-through 3px rgba(216, 103, 82, 0.7); }
+.memory-line.overwrite::after {
+  content: "泥滩？";
+  position: absolute;
+  left: 330px;
+  top: 42px;
+  color: var(--vermilion);
+  font-size: 43px;
+  transform: rotate(-4deg);
+}
+
+.decision-line {
+  margin-top: 28px;
+  padding-left: 130px;
+  color: var(--vermilion);
+  font-size: 31px;
+  line-height: 1.45;
+}
+
