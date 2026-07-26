@@ -140,6 +140,27 @@ export function reduceGameState(state: GameState, command: GameCommand): GameSta
         objective: command.evidence.summary,
       });
     }
+    case "COMPLETE_JUMP_TRAINING": {
+      if (state.phase !== "explore") return state;
+      const agent = state.agents[command.agentId];
+      if (agent.activeTask?.id !== command.taskId || agent.activeTask.type !== "investigation" || agent.mode !== "interacting") return state;
+      // Jump is a skill, never a memory: this transition ends the training
+      // without ever writing to a memory slot.
+      return bump(state, {
+        agents: {
+          ...state.agents,
+          [command.agentId]: {
+            ...agent,
+            mode: "returning",
+            activeTask: undefined,
+            returnGateId: agent.activeTask.viaGateId,
+            fatigue: clampFatigue(agent.fatigue + command.fatigue),
+          },
+        },
+        evidenceLog: [...state.evidenceLog, command.evidence],
+        objective: command.evidence.summary,
+      });
+    }
     case "START_CLEANUP": {
       if (
         state.phase !== "explore" ||
@@ -372,6 +393,34 @@ export function reduceGameState(state: GameState, command: GameCommand): GameSta
         objective: command.evidence.summary,
       });
     }
+    case "CANCEL_AI_ACTIONS": {
+      let changed = Boolean(state.discussion);
+      const agents = { ...state.agents };
+      (Object.keys(agents) as AgentId[]).forEach((agentId) => {
+        const agent = agents[agentId];
+        if (agent.mode === "discussing") {
+          agents[agentId] = { ...agent, mode: "following" };
+          changed = true;
+          return;
+        }
+        if (agent.mode === "interacting" && agent.activeTask?.type === "investigation") {
+          agents[agentId] = {
+            ...agent,
+            mode: "returning",
+            returnGateId: agent.activeTask.viaGateId,
+            activeTask: undefined,
+          };
+          changed = true;
+        }
+      });
+      return changed
+        ? bump(state, {
+            agents,
+            discussion: undefined,
+            objective: "模型连接中断，当前对话没有生成记忆",
+          })
+        : state;
+    }
     case "SET_OBJECTIVE":
       return state.objective === command.objective ? state : bump(state, { objective: command.objective });
     case "APPLY_GENERATED_CAST": {
@@ -383,6 +432,7 @@ export function reduceGameState(state: GameState, command: GameCommand): GameSta
           name: profile.name,
           personality: profile.personality,
           communicationStyle: communicationStyleByPersonality[profile.personality],
+          hiddenProfile: profile.hiddenProfile,
         };
       });
       return bump(state, { agents, generatedCast: command.cast, objective: "小队已经准备好，沿河寻找妈妈" });
@@ -410,7 +460,7 @@ export function reduceGameState(state: GameState, command: GameCommand): GameSta
         objective: command.correct ? "Demo：成功结算" : "Demo：失败结算",
       });
     case "RESET_GAME":
-      return createInitialGameState();
+      return createInitialGameState(command.seed);
     default:
       return assertNever(command);
   }

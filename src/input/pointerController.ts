@@ -46,31 +46,46 @@ export function createPointerController(options: {
     return null;
   }
 
-  function findNpcScreenTarget(event: PointerEvent): InteractiveTarget | null {
+  function findScreenTarget(event: PointerEvent): InteractiveTarget | null {
     const rect = options.canvas.getBoundingClientRect();
     let nearestTarget: InteractiveTarget | null = null;
-    let nearestDistanceSq = 32 ** 2;
+    let nearestDistanceSq = Number.POSITIVE_INFINITY;
     clickables.forEach((object) => {
+      if (!isWorldVisible(object)) return;
       const target = findTarget(object);
-      if (target?.type !== "npc") return;
+      if (target?.type !== "npc" && target?.type !== "obstacle") return;
       object.getWorldPosition(projectedPoint);
-      projectedPoint.y += 0.55;
+      projectedPoint.y += target.type === "npc" ? 0.55 : 0.7;
       projectedPoint.project(options.camera);
-      if (projectedPoint.z < -1 || projectedPoint.z > 1) return;
+      if (
+        projectedPoint.z < -1 || projectedPoint.z > 1 ||
+        projectedPoint.x < -1 || projectedPoint.x > 1 ||
+        projectedPoint.y < -1 || projectedPoint.y > 1
+      ) return;
       const screenX = rect.left + ((projectedPoint.x + 1) / 2) * rect.width;
       const screenY = rect.top + ((1 - projectedPoint.y) / 2) * rect.height;
       const distanceSq = (event.clientX - screenX) ** 2 + (event.clientY - screenY) ** 2;
-      if (distanceSq > nearestDistanceSq) return;
+      const hitRadius = target.type === "npc" ? 36 : 44;
+      if (distanceSq > hitRadius ** 2 || distanceSq > nearestDistanceSq) return;
       nearestDistanceSq = distanceSq;
       nearestTarget = target;
     });
     return nearestTarget;
   }
 
+  function isWorldVisible(object: THREE.Object3D): boolean {
+    let current: THREE.Object3D | null = object;
+    while (current) {
+      if (!current.visible) return false;
+      current = current.parent;
+    }
+    return true;
+  }
+
   function targetAtPointer(event: PointerEvent): InteractiveTarget | null {
     raycaster.setFromCamera(pointer, options.camera);
-    const hit = raycaster.intersectObjects(clickables, true)[0];
-    return (hit ? findTarget(hit.object) : null) ?? findNpcScreenTarget(event);
+    const hit = raycaster.intersectObjects(clickables.filter(isWorldVisible), true)[0];
+    return (hit ? findTarget(hit.object) : null) ?? findScreenTarget(event);
   }
 
   const onPointerUp = (event: PointerEvent): void => {

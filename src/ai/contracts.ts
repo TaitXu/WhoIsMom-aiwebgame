@@ -4,21 +4,14 @@ import type {
   Emotion,
   Fact,
   FactId,
-  FrogFeatureConstraints,
-  FrogFeatures,
-  FrogFeatureVocabulary,
   FrogId,
+  HiddenPersonalityProfile,
   Memory,
+  NpcId,
   Personality,
   Topic,
 } from "../core/types";
-import {
-  countSharedFrogFeatures,
-  frogFeatureKeys,
-  frogFeatureVector,
-  frogFeatureVocabulary,
-  frogNameRevealsFeature,
-} from "../game/case/frogFeatures";
+import { frogNameRevealsFeature } from "../game/case/frogFeatures";
 
 export type EncodeMemoryRequest = {
   requestId: string;
@@ -28,6 +21,7 @@ export type EncodeMemoryRequest = {
     personality: Personality;
     communicationStyle: CommunicationStyle;
     fatigue: number;
+    hiddenProfile?: HiddenPersonalityProfile;
   };
   npc: {
     id: string;
@@ -36,6 +30,9 @@ export type EncodeMemoryRequest = {
   topic: Topic;
   allowedFacts: Fact[];
   memories: Array<Memory | null>;
+  conversationHistory?: string[];
+  seenFactIds?: FactId[];
+  turnIndex?: number;
 };
 
 export type ReconcileMemoriesRequest = {
@@ -43,6 +40,8 @@ export type ReconcileMemoriesRequest = {
   task: "reconcile_memories";
   agentIds: [AgentId, AgentId];
   personalities: [Personality, Personality];
+  hiddenProfiles?: [HiddenPersonalityProfile | undefined, HiddenPersonalityProfile | undefined];
+  discussionHistory?: string[];
   topic: Topic;
   memories: Memory[];
 };
@@ -53,7 +52,10 @@ export type JudgeJumpLearningRequest = {
   agent: {
     id: AgentId;
     personality: Personality;
+    hiddenProfile?: HiddenPersonalityProfile;
   };
+  trainingSourceNpcId: NpcId;
+  trainingSummary: string;
   memories: Memory[];
 };
 
@@ -77,8 +79,6 @@ export type GenerateCastRequest = {
   agentIds: AgentId[];
   frogIds: FrogId[];
   motherId: FrogId;
-  featureVocabulary: FrogFeatureVocabulary;
-  requiredFeatures: FrogFeatureConstraints;
 };
 
 export type AgentRequest = EncodeMemoryRequest | ReconcileMemoriesRequest | JudgeJumpLearningRequest | MovementDecisionRequest | GenerateCastRequest;
@@ -91,6 +91,7 @@ export type EncodeMemoryResult = {
   tone: Emotion;
   fidelity: "detailed" | "compressed" | "fragmented";
   spokenSummary: string;
+  afterthought?: string;
 };
 
 export type ReconcileMemoriesResult = {
@@ -120,8 +121,14 @@ export type MovementIntentResult = {
 
 export type GenerateCastResult = {
   task: "generate_cast";
-  agents: Array<{ id: AgentId; name: string; personality: Personality; introduction: string }>;
-  frogs: Array<{ id: FrogId; name: string; features: FrogFeatures }>;
+  agents: Array<{
+    id: AgentId;
+    name: string;
+    personality: Personality;
+    introduction: string;
+    hiddenProfile: HiddenPersonalityProfile;
+  }>;
+  frogs: Array<{ id: FrogId; name: string }>;
 };
 
 export type AgentResult = EncodeMemoryResult | ReconcileMemoriesResult | JudgeJumpLearningResult | MovementIntentResult | GenerateCastResult;
@@ -134,6 +141,7 @@ export type AgentResponse = {
 
 const agentIds = new Set<AgentId>(["modian", "xiaolang", "paopao"]);
 const frogIds = new Set<FrogId>(["tree-frog", "bullfrog", "marsh-frog"]);
+const npcIds = new Set<NpcId>(["dragonfly", "turtle", "crab", "grasshopper"]);
 const personalities = new Set<Personality>(["cautious", "impulsive", "social"]);
 const topics = new Set<Topic>(["appearance", "location", "source", "jump"]);
 const emotions = new Set<Emotion>(["calm", "excited", "afraid"]);
@@ -165,6 +173,10 @@ export function validateAgentRequest(value: unknown): AgentRequest | null {
     if (!value.allowedFacts.every(isFact)) return null;
     if (!value.allowedFacts.every((fact) => fact.topic === value.topic)) return null;
     if (!isMemoryList(value.memories, true)) return null;
+    if (value.conversationHistory !== undefined && (!isStringArray(value.conversationHistory) || value.conversationHistory.length > 8 || !value.conversationHistory.every(isSummary))) return null;
+    if (value.seenFactIds !== undefined && (!isStringArray(value.seenFactIds) || value.seenFactIds.length > 24)) return null;
+    if (value.turnIndex !== undefined && (typeof value.turnIndex !== "number" || !Number.isInteger(value.turnIndex) || value.turnIndex < 0 || value.turnIndex > 100)) return null;
+    if (value.agent.hiddenProfile !== undefined && !isHiddenProfile(value.agent.hiddenProfile)) return null;
     return value as EncodeMemoryRequest;
   }
 
@@ -175,6 +187,8 @@ export function validateAgentRequest(value: unknown): AgentRequest | null {
     if (!value.personalities.every((personality) => personalities.has(personality as Personality))) return null;
     if (!topics.has(value.topic as Topic)) return null;
     if (!isMemoryList(value.memories, false) || value.memories.length === 0 || value.memories.length > 6) return null;
+    if (value.hiddenProfiles !== undefined && (!Array.isArray(value.hiddenProfiles) || value.hiddenProfiles.length !== 2 || !value.hiddenProfiles.every((profile) => profile === undefined || isHiddenProfile(profile)))) return null;
+    if (value.discussionHistory !== undefined && (!isStringArray(value.discussionHistory) || value.discussionHistory.length > 6 || !value.discussionHistory.every(isSummary))) return null;
     return value as ReconcileMemoriesRequest;
   }
 
@@ -182,8 +196,9 @@ export function validateAgentRequest(value: unknown): AgentRequest | null {
     if (!isRecord(value.agent)) return null;
     if (!agentIds.has(value.agent.id as AgentId)) return null;
     if (!personalities.has(value.agent.personality as Personality)) return null;
-    if (!isMemoryList(value.memories, false) || value.memories.length === 0 || value.memories.length > 5) return null;
-    if (!(value.memories as Memory[]).some((memory) => memory.topic === "jump")) return null;
+    if (!npcIds.has(value.trainingSourceNpcId as NpcId) || !isSummary(value.trainingSummary)) return null;
+    if (value.agent.hiddenProfile !== undefined && !isHiddenProfile(value.agent.hiddenProfile)) return null;
+    if (!isMemoryList(value.memories, false) || value.memories.length > 5) return null;
     return value as JudgeJumpLearningRequest;
   }
 
@@ -202,8 +217,6 @@ export function validateAgentRequest(value: unknown): AgentRequest | null {
     if (value.agentIds.length !== agentIds.size || new Set(value.agentIds).size !== agentIds.size) return null;
     if (value.frogIds.length !== frogIds.size || new Set(value.frogIds).size !== frogIds.size) return null;
     if (!frogIds.has(value.motherId as FrogId) || !(value.frogIds as FrogId[]).includes(value.motherId as FrogId)) return null;
-    if (!isFrogFeatureVocabulary(value.featureVocabulary)) return null;
-    if (!isFrogFeatureConstraints(value.requiredFeatures, new Set(value.frogIds), value.featureVocabulary)) return null;
     return value as GenerateCastRequest;
   }
 
@@ -248,48 +261,22 @@ function validateGenerateCastResult(
   if (!Array.isArray(value.frogs) || value.frogs.length !== request.frogIds.length) return null;
   const agentSet = new Set(request.agentIds);
   const frogSet = new Set(request.frogIds);
-  if (!value.agents.every((item) => isRecord(item) && agentSet.has(item.id as AgentId) && personalities.has(item.personality as Personality) && isSafeSummary(item.name) && isSafeSummary(item.introduction))) return null;
+  if (!value.agents.every((item) => isRecord(item) && agentSet.has(item.id as AgentId) && personalities.has(item.personality as Personality) && isSafeSummary(item.name) && isSafeSummary(item.introduction) && isHiddenProfile(item.hiddenProfile))) return null;
   if (!value.frogs.every((item) => (
     isRecord(item)
     && frogSet.has(item.id as FrogId)
     && isSafeSummary(item.name)
     && !frogNameRevealsFeature(item.name)
-    && isFrogFeatures(item.features, request.featureVocabulary)
   ))) return null;
   if (new Set(value.agents.map((item) => (item as Record<string, unknown>).id)).size !== value.agents.length) return null;
   if (new Set(value.frogs.map((item) => (item as Record<string, unknown>).id)).size !== value.frogs.length) return null;
   if (new Set(value.frogs.map((item) => (item as Record<string, unknown>).name)).size !== value.frogs.length) return null;
   if (new Set(value.agents.map((item) => (item as Record<string, unknown>).personality)).size !== personalities.size) return null;
-  const frogs = value.frogs.map((item) => item as GenerateCastResult["frogs"][number]);
-  if (!frogs.every((frog) => matchesRequiredFeatures(frog.id, frog.features, request.requiredFeatures))) return null;
-  if (new Set(frogs.map((frog) => frogFeatureVector(frog.features))).size !== frogs.length) return null;
-  if (new Set(frogs.map((frog) => frog.features.redAdornment)).size !== frogs.length) return null;
-  const variedDimensions = frogFeatureKeys.filter(
-    (key) => new Set(frogs.map((frog) => frog.features[key])).size > 1,
-  ).length;
-  if (variedDimensions < 5) return null;
-  const mother = frogs.find((frog) => frog.id === request.motherId);
-  if (!mother) return null;
-  if (frogs.some((frog) => frog.id !== mother.id && !isBalancedDecoy(mother.features, frog.features))) return null;
   return {
     task: "generate_cast",
     agents: value.agents.map((item) => item as GenerateCastResult["agents"][number]),
-    frogs,
+    frogs: value.frogs.map((item) => item as GenerateCastResult["frogs"][number]),
   };
-}
-
-function isBalancedDecoy(mother: FrogFeatures, decoy: FrogFeatures): boolean {
-  const shared = countSharedFrogFeatures(mother, decoy);
-  return shared >= 3 && shared <= 5;
-}
-
-function matchesRequiredFeatures(
-  frogId: FrogId,
-  features: FrogFeatures,
-  constraints: FrogFeatureConstraints,
-): boolean {
-  const required = constraints[frogId];
-  return !required || frogFeatureKeys.every((key) => required[key] === undefined || required[key] === features[key]);
 }
 
 function validateEncodeResult(
@@ -299,10 +286,6 @@ function validateEncodeResult(
   const allowedIds = new Set(request.allowedFacts.map((fact) => fact.id));
   if (!isStringArray(value.selectedFactIds) || value.selectedFactIds.length !== 1) return null;
   if (!value.selectedFactIds.every((id) => allowedIds.has(id))) return null;
-  const ambiguousIds = request.allowedFacts
-    .filter((fact) => fact.veracity === "contextual" || fact.veracity === "false")
-    .map((fact) => fact.id);
-  if (ambiguousIds.length > 0 && !ambiguousIds.includes(value.selectedFactIds[0]!)) return null;
   const omittedFields = value.omittedFields;
   if (!isStringArray(omittedFields)) return null;
   if (!omittedFields.every((field) => allowedOmissions.has(field))) return null;
@@ -314,6 +297,7 @@ function validateEncodeResult(
   if (request.agent.fatigue >= 70 && !["time", "place", "source"].every((field) => omittedFields.includes(field))) return null;
   if (request.agent.fatigue >= 45 && request.agent.fatigue < 70 && value.fidelity === "detailed") return null;
   if (!isSafeSummary(value.spokenSummary)) return null;
+  if (value.afterthought !== undefined && !isSafeSummary(value.afterthought)) return null;
 
   return {
     task: "encode_memory",
@@ -323,6 +307,7 @@ function validateEncodeResult(
     tone: value.tone as Emotion,
     fidelity: value.fidelity,
     spokenSummary: value.spokenSummary,
+    afterthought: value.afterthought as string | undefined,
   };
 }
 
@@ -352,7 +337,7 @@ function validateJumpLearningResult(
   const allowedIds = new Set(request.memories.map((memory) => memory.id));
   if (value.outcome !== "partial" && value.outcome !== "learned") return null;
   if (request.agent.personality !== "cautious" && value.outcome !== "learned") return null;
-  if (!isStringArray(value.relevantMemoryIds) || value.relevantMemoryIds.length === 0) return null;
+  if (!isStringArray(value.relevantMemoryIds)) return null;
   if (!value.relevantMemoryIds.every((id) => allowedIds.has(id))) return null;
   if (!isSafeSummary(value.spokenSummary)) return null;
   return {
@@ -426,44 +411,15 @@ function isIdArray<T extends string>(value: unknown, allowed: Set<T>): value is 
   return Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === "string" && allowed.has(item as T));
 }
 
-function isFrogFeatureVocabulary(value: unknown): value is FrogFeatureVocabulary {
-  if (!isRecord(value)) return false;
-  return frogFeatureKeys.every((key) => {
-    const candidate = value[key];
-    const canonical = frogFeatureVocabulary[key];
-    return isStringArray(candidate)
-      && candidate.length === canonical.length
-      && new Set(candidate).size === canonical.length
-      && candidate.every((item) => (canonical as readonly string[]).includes(item));
-  });
-}
-
-function isFrogFeatureConstraints(
-  value: unknown,
-  requestedFrogIds: Set<FrogId>,
-  vocabulary: FrogFeatureVocabulary,
-): value is FrogFeatureConstraints {
-  if (!isRecord(value)) return false;
-  return Object.entries(value).every(([frogId, constraint]) => {
-    if (!requestedFrogIds.has(frogId as FrogId) || !isRecord(constraint)) return false;
-    return Object.entries(constraint).every(([key, featureValue]) => (
-      frogFeatureKeys.includes(key as keyof FrogFeatures)
-      && typeof featureValue === "string"
-      && (vocabulary[key as keyof FrogFeatures] as readonly string[]).includes(featureValue)
-    ));
-  });
-}
-
-function isFrogFeatures(value: unknown, vocabulary: FrogFeatureVocabulary): value is FrogFeatures {
-  if (!isRecord(value) || Object.keys(value).length !== frogFeatureKeys.length) return false;
-  return frogFeatureKeys.every((key) => (
-    typeof value[key] === "string"
-    && (vocabulary[key] as readonly string[]).includes(value[key] as string)
-  ));
-}
 
 function isSummary(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= 120;
+}
+
+function isHiddenProfile(value: unknown): value is HiddenPersonalityProfile {
+  return isRecord(value)
+    && isSummary(value.dossier)
+    && isSummary(value.speechRules);
 }
 
 function isSafeSummary(value: unknown): value is string {

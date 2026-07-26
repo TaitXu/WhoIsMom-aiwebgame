@@ -18,6 +18,7 @@ import type {
 } from "../../core/types";
 import { chooseMemorySlot, chooseMemoryToForget } from "../memory/memorySystem";
 import { demoCase } from "../case/demoCase";
+import type { CaseDefinition } from "../case/caseTypes";
 import { confirmedSourceCount } from "../state/gameRules";
 import type { GameStore } from "../state/gameStore";
 import { evaluateConversationRisk } from "./conversationRisk";
@@ -39,7 +40,8 @@ export interface GameDirector {
   restSquad(): boolean;
   chooseMother(frogId: FrogId): boolean;
   getTaskProgress(agentId: AgentId): AgentTaskProgress | undefined;
-  reset(): void;
+  abortAiActions(): void;
+  reset(seed?: number): void;
 }
 
 export type AgentTaskProgress = Readonly<{
@@ -48,18 +50,26 @@ export type AgentTaskProgress = Readonly<{
   value: number;
 }>;
 
-export function createGameDirector(options: { store: GameStore; service: AgentService }): GameDirector {
+export function createGameDirector(options: { store: GameStore; service: AgentService; getCase?: () => CaseDefinition }): GameDirector {
   const interactionTimers = new Map<string, number>();
   const cleanupTimers = new Map<string, number>();
   const gateRoamTimers = new Map<string, number>();
   const pendingRequests = new Set<string>();
   const conversationCursor = new Map<NpcId, number>();
+  const seenFacts = new Map<string, Set<string>>();
+  const offeredFacts = new Map<string, Set<string>>();
+  const clarifiedFacts = new Map<string, Set<string>>();
+  const npcConversationHistory = new Map<NpcId, string[]>();
+  const discussionHistory = new Map<string, string[]>();
+  const pendingChatter = new Map<AgentId, string[]>();
   let sequence = 0;
   let generation = 0;
   let idleChatterElapsed = 0;
   let autonomousDiscussionElapsed = 0;
   let memoryDecayElapsed = 0;
   let chatterSequence = 0;
+
+  const currentCase = (): CaseDefinition => options.getCase?.() ?? demoCase;
 
   function nextId(prefix: string): string {
     sequence += 1;
@@ -68,7 +78,7 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
 
   function startConversation(agentIds: AgentId[], npcId: NpcId): boolean {
     const state = options.store.getState();
-    const npc = demoCase.npcs.find((candidate) => candidate.id === npcId);
+    const npc = currentCase().npcs.find((candidate) => candidate.id === npcId);
     const participants = [...new Set(agentIds)].filter((id) => state.agents[id].mode === "following" && state.agents[id].fatigue < 90);
     if (!npc || participants.length === 0) return false;
 
@@ -96,7 +106,7 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
     autonomous = false,
   ): boolean {
     const state = options.store.getState();
-    const npc = demoCase.npcs.find((candidate) => candidate.id === npcId);
+    const npc = currentCase().npcs.find((candidate) => candidate.id === npcId);
     const participants = [...new Set(agentIds)].slice(0, 3);
     if (!npc || !(npc.topics as readonly Topic[]).includes(topic) || participants.length === 0) return false;
     if (participants.some((id) => state.agents[id].mode !== "following" || state.agents[id].fatigue >= 90)) return false;
@@ -130,12 +140,12 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
     if (agent.activeTask?.id !== taskId || agent.activeTask.type !== "investigation" || agent.mode !== "approaching") return;
     interactionTimers.set(taskId, 0);
     options.store.dispatch({ type: "BEGIN_INTERACTION", agentId, taskId });
-    const target = demoCase.npcs.find((candidate) => candidate.id === (agent.activeTask as InvestigationTask).npcId);
+    const target = currentCase().npcs.find((candidate) => candidate.id === (agent.activeTask as InvestigationTask).npcId);
     options.store.dispatch({ type: "SET_OBJECTIVE", objective: `${agent.name}正在和${target?.name ?? "目击者"}交谈，你听不见它们说什么` });
   }
 
   function startCleanup(agentIds: AgentId[], obstacleId: ObstacleId): boolean {
-    const obstacle = demoCase.obstacles.find((candidate) => candidate.id === obstacleId);
+    const obstacle = currentCase().obstacles.find((candidate) => candidate.id === obstacleId);
     const participantIds = [...new Set(agentIds)].slice(0, 2);
     if (!obstacle || participantIds.length === 0) return false;
     const task: CleanupTask = { type: "cleanup", id: nextId("cleanup"), obstacleId, participantIds };
@@ -169,7 +179,7 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
       if (!task || task.type !== "investigation" || agent.mode !== "interacting") return;
       const elapsed = (interactionTimers.get(task.id) ?? 0) + delta;
       interactionTimers.set(task.id, elapsed);
-      if (elapsed >= 1.15) void finishInvestigation(agent.id, task, generation);
+      if (elapsed >= 1.15) void finishInvestigation(agent.id, task, generation).catch(() => undefined);
     });
 
     cleanupTimers.forEach((elapsed, taskId) => {
@@ -180,7 +190,7 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
       }
       const next = elapsed + delta;
       cleanupTimers.set(taskId, next);
-      const obstacle = demoCase.obstacles.find((candidate) => candidate.id === task.obstacleId)!;
+      const obstacle = currentCase().obstacles.find((candidate) => candidate.id === task.obstacleId)!;
       const current = options.store.getState();
       const aptitudeBonus = task.participantIds.some((id) => current.agents[id].personality === obstacle.preferredPersonality) ? 0.45 : 0;
       const averageFatigue = task.participantIds.reduce((sum, id) => sum + current.agents[id].fatigue, 0) / task.participantIds.length;
@@ -215,10 +225,65 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
     pendingRequests.add(task.id);
     const state = options.store.getState();
     const agent = state.agents[agentId];
-    const npc = demoCase.npcs.find((candidate) => candidate.id === task.npcId)!;
-    const allowedFacts = selectAvailableFacts(npc.facts, task.topic, agent.memories);
+    const npc = currentCase().npcs.find((candidate) => candidate.id === task.npcId)!;
+    const agentNpcKey = `${agentId}:${npc.id}`;
+    const offeredKey = `${npc.id}:${task.topic}`;
+    const known = seenFacts.get(agentNpcKey) ?? new Set<string>();
+    seenFacts.set(agentNpcKey, known);
+    const offered = offeredFacts.get(offeredKey) ?? new Set<string>();
+    offeredFacts.set(offeredKey, offered);
+    const clarified = clarifiedFacts.get(agentNpcKey) ?? new Set<string>();
+    clarifiedFacts.set(agentNpcKey, clarified);
+    const selection = selectConversationFact(npc.facts, task.topic, agent.memories, known, offered, clarified);
 
     try {
+      if (task.topic === "jump") {
+        const jumpAgent = options.store.getState().agents[agentId];
+        if (jumpAgent.activeTask?.id !== task.id || jumpAgent.mode !== "interacting") return;
+        options.store.dispatch({
+          type: "COMPLETE_JUMP_TRAINING",
+          agentId,
+          taskId: task.id,
+          evidence: {
+            id: nextId("ability"),
+            kind: "ability",
+            agentIds: [agentId],
+            topic: "jump",
+            summary: `${jumpAgent.name}跟着${npc.name}练了起跳`,
+            sourceLabel: `${npc.name} · 跳跃练习`,
+            sourceNpcIds: [npc.id],
+            createdAt: Date.now(),
+          },
+          fatigue: task.autonomous ? 10 : 6,
+        });
+        if (task.viaGateId) options.store.dispatch({ type: "MARK_GATE_SCOUTED", gateId: task.viaGateId });
+        interactionTimers.delete(task.id);
+        await judgeJumpLearning(agentId, npc.id, requestGeneration);
+        return;
+      }
+      if (!selection) {
+        const summary = `${agent.name}继续问了一会儿，但${npc.name}已经没有新的线索了`;
+        options.store.dispatch({
+          type: "FAIL_INVESTIGATION",
+          agentId,
+          taskId: task.id,
+          evidence: {
+            id: nextId("finished-conversation"),
+            kind: "investigation",
+            agentIds: [agentId],
+            topic: task.topic,
+            summary,
+            sourceLabel: `${npc.name} · 已问完`,
+            sourceNpcIds: [npc.id],
+            createdAt: Date.now(),
+          },
+          fatigue: 4,
+        });
+        interactionTimers.delete(task.id);
+        speak(agentId, "这部分好像已经问清楚了。", "autonomous", 4_000);
+        return;
+      }
+      offered.add(selection.fact.id);
       const response = await options.service.encodeMemory({
         requestId: task.id,
         task: "encode_memory",
@@ -227,11 +292,15 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
           personality: agent.personality,
           communicationStyle: agent.communicationStyle,
           fatigue: agent.fatigue,
+          hiddenProfile: agent.hiddenProfile,
         },
         npc: { id: npc.id, name: npc.name },
         topic: task.topic,
-        allowedFacts: [...allowedFacts],
+        allowedFacts: [selection.fact],
         memories: [...agent.memories],
+        conversationHistory: [...(npcConversationHistory.get(npc.id) ?? [])],
+        seenFactIds: [...known],
+        turnIndex: (npcConversationHistory.get(npc.id) ?? []).length,
       });
       if (requestGeneration !== generation) return;
       const currentAgent = options.store.getState().agents[agentId];
@@ -272,7 +341,7 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
         return;
       }
 
-      const encodedMemory = normalizeEncodedMemory(allowedFacts, response.result, currentAgent.communicationStyle);
+      const encodedMemory = normalizeEncodedMemory([selection.fact], response.result);
       if (!encodedMemory) return;
 
       const memory: Memory = {
@@ -302,34 +371,55 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
         sourceNpcIds: [npc.id],
         createdAt: Date.now(),
       };
+      const existingSlot = currentAgent.memories.findIndex((item) => (
+        item?.sourceNpcId === npc.id && item.factIds.includes(encodedMemory.fact.id)
+      ));
       options.store.dispatch({
         type: "COMPLETE_INVESTIGATION",
         agentId,
         taskId: task.id,
         memory,
-        slot: chooseMemorySlot(currentAgent),
+        slot: existingSlot >= 0 ? existingSlot : chooseMemorySlot(currentAgent),
         evidence,
         fatigue: task.autonomous ? 12 : 8,
       });
+      known.add(encodedMemory.fact.id);
+      if (selection.kind === "clarify") clarified.add(encodedMemory.fact.id);
+      const history = npcConversationHistory.get(npc.id) ?? [];
+      history.push(`${currentAgent.name}记成了：${memory.summary}`);
+      npcConversationHistory.set(npc.id, history.slice(-6));
+      if (response.result.afterthought) {
+        const lines = pendingChatter.get(agentId) ?? [];
+        lines.push(response.result.afterthought);
+        pendingChatter.set(agentId, lines.slice(-3));
+      }
       if (task.viaGateId) options.store.dispatch({ type: "MARK_GATE_SCOUTED", gateId: task.viaGateId });
       interactionTimers.delete(task.id);
-      if (task.topic === "jump") await judgeJumpLearning(agentId, memory, requestGeneration);
     } finally {
       pendingRequests.delete(task.id);
     }
   }
 
-  async function judgeJumpLearning(agentId: AgentId, memory: Memory, requestGeneration: number): Promise<void> {
-    const key = `${memory.id}-jump`;
+  async function judgeJumpLearning(agentId: AgentId, sourceNpcId: NpcId, requestGeneration: number): Promise<void> {
+    const key = `jump-${agentId}-${requestGeneration}`;
     const agent = options.store.getState().agents[agentId];
     const response = await options.service.judgeJumpLearning({
       requestId: key,
       task: "judge_jump_learning",
-      agent: { id: agent.id, personality: agent.personality },
+      agent: {
+        id: agent.id,
+        personality: agent.personality,
+        hiddenProfile: agent.hiddenProfile,
+      },
+      trainingSourceNpcId: sourceNpcId,
+      trainingSummary: currentCase().npcs
+        .find((npc) => npc.id === sourceNpcId)?.facts
+        .find((fact) => fact.topic === "jump")?.value ?? "跟着河边的朋友练习了起跳时机",
       memories: agent.memories.filter((item): item is Memory => Boolean(item)),
     });
     if (requestGeneration !== generation || response.result.task !== "judge_jump_learning") return;
     const knowledge: JumpKnowledge = response.result.outcome;
+    if (agent.jumpKnowledge === knowledge) return;
     options.store.dispatch({
       type: "LEARN_JUMP",
       agentId,
@@ -341,16 +431,17 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
         topic: "jump",
         summary: response.result.spokenSummary,
         sourceLabel: response.source === "model" ? "AI 学习判断" : "本地学习判断",
-        sourceNpcIds: ["grasshopper"],
+        sourceNpcIds: [sourceNpcId],
         createdAt: Date.now(),
       },
     });
+    if (knowledge === "learned") speak(agentId, "我学会跳跃了！", "autonomous", 5_000);
   }
 
   function finishCleanup(task: CleanupTask): void {
     if (pendingRequests.has(task.id)) return;
     pendingRequests.add(task.id);
-    const obstacle = demoCase.obstacles.find((candidate) => candidate.id === task.obstacleId)!;
+    const obstacle = currentCase().obstacles.find((candidate) => candidate.id === task.obstacleId)!;
     options.store.dispatch({
       type: "COMPLETE_CLEANUP",
       taskId: task.id,
@@ -400,7 +491,7 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
       speak(firstId, "我想起一件事，我们对一对？", "peer", 5_000);
       speak(secondId, "好呀，但别把猜测当成亲眼看见。", "peer", 5_000);
     }
-    void finishDiscussion(discussion, [...firstMemories, ...secondMemories], generation);
+    void finishDiscussion(discussion, [...firstMemories, ...secondMemories], generation).catch(() => undefined);
     return true;
   }
 
@@ -416,6 +507,8 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
           task: "reconcile_memories",
           agentIds: discussion.agentIds,
           personalities: [state.agents[firstId].personality, state.agents[secondId].personality],
+          hiddenProfiles: [state.agents[firstId].hiddenProfile, state.agents[secondId].hiddenProfile],
+          discussionHistory: [...(discussionHistory.get(discussionKey(discussion)) ?? [])],
           topic: discussion.topic,
           memories,
         }),
@@ -434,6 +527,10 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
         if (agentId) updates.push({ agentId, memoryId, confidence: "questioned", reinforced: false });
       });
       const sources = [...new Set(memories.map((item) => item.sourceNpcId))];
+      const historyKey = discussionKey(discussion);
+      const previousDiscussion = discussionHistory.get(historyKey) ?? [];
+      previousDiscussion.push(response.result.spokenSummary);
+      discussionHistory.set(historyKey, previousDiscussion.slice(-4));
       options.store.dispatch({
         type: "COMPLETE_DISCUSSION",
         discussionId: discussion.id,
@@ -477,27 +574,31 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
           slot: chooseMemorySlot(receiver),
         });
       }
-      if (discussion.topic === "jump") {
-        discussion.agentIds.forEach((agentId) => {
-          const agent = options.store.getState().agents[agentId];
-          if (agent.jumpKnowledge !== "partial") return;
-          options.store.dispatch({
-            type: "LEARN_JUMP",
-            agentId,
-            knowledge: "learned",
-            evidence: {
-              id: nextId("ability"),
-              kind: "ability",
-              agentIds: [...discussion.agentIds],
-              topic: "jump",
-              summary: `${agent.name}在同伴追问后补全了起跳时机`,
-              sourceLabel: "同伴对证学习",
-              sourceNpcIds: ["grasshopper"],
-              createdAt: Date.now(),
-            },
-          });
+      // Jump is a skill rather than a memory topic, but talking it through with
+      // a companion who has already mastered it can complete a partly-learned
+      // jump — so other conversations can also teach the skill.
+      discussion.agentIds.forEach((agentId) => {
+        const agent = options.store.getState().agents[agentId];
+        if (agent.jumpKnowledge !== "partial") return;
+        const partnerId = discussion.agentIds.find((id) => id !== agentId)!;
+        const partner = options.store.getState().agents[partnerId];
+        if (partner.jumpKnowledge !== "learned") return;
+        options.store.dispatch({
+          type: "LEARN_JUMP",
+          agentId,
+          knowledge: "learned",
+          evidence: {
+            id: nextId("ability"),
+            kind: "ability",
+            agentIds: [...discussion.agentIds],
+            topic: "jump",
+            summary: `${agent.name}听${partner.name}讲明白起跳时机，学会了跳跃`,
+            sourceLabel: "同伴对证学习",
+            createdAt: Date.now(),
+          },
         });
-      }
+        speak(agentId, "我学会跳跃了！", "autonomous", 5_000);
+      });
     } finally {
       pendingRequests.delete(discussion.id);
     }
@@ -526,6 +627,11 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
     if (!agentId) return;
     chatterSequence += 1;
     const agent = state.agents[agentId];
+    const queuedLine = pendingChatter.get(agentId)?.shift();
+    if (queuedLine) {
+      speak(agentId, queuedLine, "idle");
+      return;
+    }
     const memory = agent.memories.filter((item): item is Memory => Boolean(item)).sort((a, b) => b.createdAt - a.createdAt)[0];
     if (agent.fatigue >= 70) {
       speak(agentId, "我有点累，刚才的话好像开始记不清了……", "tired");
@@ -645,7 +751,7 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
       options.store.dispatch({ type: "SET_OBJECTIVE", objective: "她只是温柔地看着你们。至少用两处独立证据对证后，才能确认妈妈" });
       return false;
     }
-    options.store.dispatch({ type: "CHOOSE_MOTHER", frogId, correct: frogId === demoCase.motherId });
+    options.store.dispatch({ type: "CHOOSE_MOTHER", frogId, correct: frogId === currentCase().motherId });
     return true;
   }
 
@@ -662,7 +768,7 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
         : 0.4 + clamp01((interactionTimers.get(task.id) ?? 0) / 1.15) * 0.6;
       return { kind: "dialogue", label: agent.mode === "approaching" ? "去聊天" : value >= 1 ? "记住中" : "聊天中", value };
     }
-    const obstacle = demoCase.obstacles.find((candidate) => candidate.id === task.obstacleId);
+    const obstacle = currentCase().obstacles.find((candidate) => candidate.id === task.obstacleId);
     if (!obstacle) return undefined;
     const aptitudeBonus = task.participantIds.some((id) => state.agents[id].personality === obstacle.preferredPersonality) ? 0.45 : 0;
     const averageFatigue = task.participantIds.reduce((sum, id) => sum + state.agents[id].fatigue, 0) / task.participantIds.length;
@@ -671,18 +777,31 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
     return { kind: "cleanup", label: agent.mode === "approaching" ? "去清理" : "清理中", value };
   }
 
-  function reset(): void {
+  function reset(seed?: number): void {
     generation += 1;
     interactionTimers.clear();
     cleanupTimers.clear();
     gateRoamTimers.clear();
     pendingRequests.clear();
     conversationCursor.clear();
+    seenFacts.clear();
+    offeredFacts.clear();
+    clarifiedFacts.clear();
+    npcConversationHistory.clear();
+    discussionHistory.clear();
+    pendingChatter.clear();
     idleChatterElapsed = 0;
     autonomousDiscussionElapsed = 0;
     memoryDecayElapsed = 0;
     chatterSequence = 0;
-    options.store.dispatch({ type: "RESET_GAME" });
+    options.store.dispatch({ type: "RESET_GAME", seed });
+  }
+
+  function abortAiActions(): void {
+    generation += 1;
+    interactionTimers.clear();
+    pendingRequests.clear();
+    options.store.dispatch({ type: "CANCEL_AI_ACTIONS" });
   }
 
   return {
@@ -702,6 +821,7 @@ export function createGameDirector(options: { store: GameStore; service: AgentSe
     restSquad,
     chooseMother,
     getTaskProgress,
+    abortAiActions,
     reset,
   };
 }
@@ -727,50 +847,59 @@ function selectAvailableFacts(
   facts: readonly Fact[],
   topic: Topic,
   memories: ReadonlyArray<Memory | null>,
+  seen: ReadonlySet<string>,
 ): Fact[] {
-  const knownFactIds = new Set(memories.flatMap((memory) => memory?.factIds ?? []));
+  const knownFactIds = new Set([...seen, ...memories.flatMap((memory) => memory?.factIds ?? [])]);
   const topicFacts = facts.filter((fact) => fact.topic === topic);
   const conditional = topicFacts.filter(
     (fact) => fact.requiresAnyFactIds?.some((factId) => knownFactIds.has(factId)),
   );
   const available = conditional.length > 0 ? conditional : topicFacts.filter((fact) => !fact.requiresAnyFactIds);
-  const unseen = available.filter((fact) => !knownFactIds.has(fact.id));
-  return unseen.length > 0 ? unseen : available;
+  return available;
+}
+
+function selectConversationFact(
+  facts: readonly Fact[],
+  topic: Topic,
+  memories: ReadonlyArray<Memory | null>,
+  seen: ReadonlySet<string>,
+  offered: Set<string>,
+  clarified: ReadonlySet<string>,
+): { fact: Fact; kind: "new" | "clarify" | "refresh" } | undefined {
+  const available = selectAvailableFacts(facts, topic, memories, seen);
+  const unseen = available.filter((fact) => !seen.has(fact.id));
+  if (unseen.length > 0) {
+    let fact = unseen.find((candidate) => !offered.has(candidate.id));
+    if (!fact) {
+      offered.clear();
+      fact = unseen[0];
+    }
+    return fact ? { fact, kind: "new" } : undefined;
+  }
+
+  const currentFactIds = new Set(memories.flatMap((memory) => memory?.factIds ?? []));
+  const clarification = available.find((fact) => currentFactIds.has(fact.id) && !clarified.has(fact.id));
+  if (clarification) return { fact: clarification, kind: "clarify" };
+  const refresh = available.find((fact) => !currentFactIds.has(fact.id));
+  return refresh ? { fact: refresh, kind: "refresh" } : undefined;
 }
 
 function normalizeEncodedMemory(
   allowedFacts: readonly Fact[],
   result: EncodeMemoryResult,
-  communicationStyle: "literal" | "embellishing" | "agreeable",
 ): { fact: Fact; summary: string } | undefined {
   const selectedId = result.selectedFactIds[0];
   const selectedFact = allowedFacts.find((fact) => fact.id === selectedId);
-  const misleadingFacts = allowedFacts.filter(
-    (fact) => fact.veracity === "contextual" || fact.veracity === "false",
-  );
-  const fact = misleadingFacts.find((candidate) => candidate.id === selectedId)
-    ?? misleadingFacts[0]
-    ?? selectedFact
-    ?? allowedFacts[0];
+  const fact = selectedFact ?? allowedFacts[0];
   if (!fact) return undefined;
   return {
     fact,
-    summary: buildLimitedMemorySummary(fact, result.fidelity, communicationStyle),
+    summary: result.spokenSummary,
   };
 }
 
-function buildLimitedMemorySummary(
-  fact: Fact,
-  fidelity: EncodeMemoryResult["fidelity"],
-  communicationStyle: "literal" | "embellishing" | "agreeable",
-): string {
-  const atomicClue = fact.topic === "jump"
-    ? fact.value
-    : fact.value.split(/[，,；;。！？!?]/, 1)[0] ?? fact.value;
-  if (fidelity === "fragmented") return `脑子很乱，只剩下：“${shorten(atomicClue, 14)}……”`;
-  if (communicationStyle === "embellishing") return `我敢肯定，我听到的是：“${shorten(atomicClue, 28)}。”`;
-  if (communicationStyle === "agreeable") return `我当时觉得，它说的应该是：“${shorten(atomicClue, 28)}。”`;
-  return `我只记得一句：“${shorten(atomicClue, 28)}。”前后条件没有记全。`;
+function discussionKey(discussion: DiscussionState): string {
+  return `${[...discussion.agentIds].sort().join(":")}:${discussion.topic}`;
 }
 
 function shorten(value: string, length: number): string {

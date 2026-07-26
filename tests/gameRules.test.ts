@@ -272,4 +272,29 @@ describe("game rules", () => {
     expect(state.agents.modian.fatigue).toBe(51);
     expect(state.agents.modian.mode).toBe("following");
   });
+
+  it("cancels model-dependent actions without creating memories when AI disconnects", () => {
+    let state = createInitialGameState();
+    state = reduceGameState(state, { type: "START_INVESTIGATION", agentId: "modian", task });
+    state = reduceGameState(state, { type: "BEGIN_INTERACTION", agentId: "modian", taskId: task.id });
+    state = reduceGameState(state, {
+      type: "START_DISCUSSION",
+      discussion: {
+        id: "discussion-1",
+        agentIds: ["xiaolang", "paopao"],
+        topic: "location",
+        autonomous: false,
+      },
+    });
+
+    const next = reduceGameState(state, { type: "CANCEL_AI_ACTIONS" });
+
+    expect(next.agents.modian.mode).toBe("returning");
+    expect(next.agents.modian.activeTask).toBeUndefined();
+    expect(next.agents.xiaolang.mode).toBe("following");
+    expect(next.agents.paopao.mode).toBe("following");
+    expect(next.discussion).toBeUndefined();
+    expect(next.agents.modian.memories.every((memory) => memory === null)).toBe(true);
+    expect(next.objective).toContain("没有生成记忆");
+  });
 });

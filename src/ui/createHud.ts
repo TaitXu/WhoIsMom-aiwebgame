@@ -1,4 +1,4 @@
-import type { AgentId, AgentMode, EvidenceEvent, FrogId, GameState, GateId, Memory, NpcId, ObstacleId, Topic } from "../core/types";
+import type { AgentId, AgentMode, FrogId, GameState, GateId, Memory, NpcId, ObstacleId, Topic } from "../core/types";
 import type { LlmConfigStore } from "../ai/llmConfig";
 import { agentMarkerColors, communicationStyleLabels, personalityLabels } from "../game/agents/personality";
 import { demoCase } from "../game/case/demoCase";
@@ -10,6 +10,7 @@ export interface Hud {
   toggleEvidence(): void;
   toggleMemory(): void;
   openMotherChoice(frogId?: FrogId): void;
+  showModelUnavailable(message: string): void;
   closeModal(): void;
   dispose(): void;
 }
@@ -52,7 +53,7 @@ type ModalState =
   | null;
 
 const agentOrder: AgentId[] = ["modian", "xiaolang", "paopao"];
-const discussionTopics: Topic[] = ["appearance", "location", "source", "jump"];
+const discussionTopics: Topic[] = ["appearance", "location", "source"];
 const modeLabels: Record<AgentMode, string> = {
   following: "跟随",
   considering: "犹豫",
@@ -86,6 +87,7 @@ export function createHud(options: {
   onDemoEnding(correct: boolean): void;
   onRestart(): void;
   onStart(): Promise<void>;
+  onRetryModel(): Promise<void>;
   llmConfig: LlmConfigStore;
 }): Hud {
   const squad = requireElement<HTMLElement>(options.root, "[data-squad]");
@@ -114,7 +116,11 @@ export function createHud(options: {
   const startScreen = requireElement<HTMLElement>(options.root, "[data-start-screen]");
   const loadingScreen = requireElement<HTMLElement>(options.root, "[data-loading-screen]");
   const loadingStatus = requireElement<HTMLElement>(options.root, "[data-loading-status]");
+  const startStatus = requireElement<HTMLElement>(options.root, "[data-start-status]");
   const startButton = requireElement<HTMLButtonElement>(options.root, '[data-action="start-game"]');
+  const modelGate = requireElement<HTMLElement>(options.root, "[data-model-gate]");
+  const modelGateStatus = requireElement<HTMLElement>(options.root, "[data-model-gate-status]");
+  const retryModelButton = requireElement<HTMLButtonElement>(options.root, '[data-action="retry-model"]');
   const settingsPanel = requireElement<HTMLElement>(options.root, "[data-settings-panel]");
   const baseUrlInput = requireElement<HTMLInputElement>(options.root, "[data-llm-base-url]");
   const modelInput = requireElement<HTMLInputElement>(options.root, "[data-llm-model]");
@@ -134,6 +140,7 @@ export function createHud(options: {
   let evidenceOpen = false;
   let modalState: ModalState = null;
   let starting = false;
+  let reconnecting = false;
   let loadingTimer: number | undefined;
   let draftLlmMode: "default" | "custom" = "default";
   let promptKey: string | null = null;
@@ -149,8 +156,8 @@ export function createHud(options: {
     apiKeyInput.value = config.apiKey;
     syncLlmModeUi();
     settingsStatus.textContent = config.mode === "default"
-      ? "当前使用默认模型，失败时自动回退到本地 Agent"
-      : "当前使用自定义模型，失败时自动回退到本地 Agent";
+      ? "当前使用默认模型；连接失败时游戏会暂停，不会生成本地替代记忆"
+      : "当前使用自定义模型；连接失败时游戏会暂停，不会生成本地替代记忆";
   }
 
   function syncLlmModeUi(): void {
@@ -206,11 +213,12 @@ export function createHud(options: {
     if (action === "start-game") {
       if (starting) return;
       starting = true;
+      startStatus.textContent = "";
       startButton.disabled = true;
       startScreen.hidden = true;
       loadingScreen.hidden = false;
       options.root.dataset.screen = "loading";
-      const statuses = ["正在唤醒河流里的 Agent…", "正在生成三只蝌蚪的性格…", "正在描绘候选妈妈的形象…", "正在整理本局小队…"];
+      const statuses = ["正在生成本局角色…", "正在唤醒河流里的 Agent…", "正在整理本局小队…"];
       let statusIndex = 0;
       loadingStatus.textContent = statuses[statusIndex]!;
       loadingTimer = window.setInterval(() => {
@@ -223,16 +231,38 @@ export function createHud(options: {
         await new Promise((resolve) => window.setTimeout(resolve, 420));
         loadingScreen.hidden = true;
         options.root.dataset.screen = "game";
-      } catch {
-        loadingStatus.textContent = "生成失败，已使用本地角色模板";
-        await new Promise((resolve) => window.setTimeout(resolve, 700));
+      } catch (error) {
+        const message = modelErrorMessage(error);
+        loadingStatus.textContent = "大模型连接失败，无法开始游戏";
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
         loadingScreen.hidden = true;
+        startScreen.hidden = false;
+        options.root.dataset.screen = "title";
+        startStatus.textContent = message;
       } finally {
         if (loadingTimer !== undefined) window.clearInterval(loadingTimer);
         loadingTimer = undefined;
         starting = false;
         startButton.disabled = false;
       }
+      return;
+    }
+    if (action === "retry-model") {
+      if (reconnecting) return;
+      reconnecting = true;
+      retryModelButton.disabled = true;
+      modelGateStatus.textContent = "正在重新连接大模型…";
+      try {
+        await options.onRetryModel();
+        modelGate.hidden = true;
+        delete options.root.dataset.modelPaused;
+      } catch (error) {
+        modelGateStatus.textContent = modelErrorMessage(error);
+      } finally {
+        reconnecting = false;
+        retryModelButton.disabled = false;
+      }
+      return;
     }
     if (action === "open-settings") openSettings();
     if (action === "close-settings") closeSettings();
@@ -268,6 +298,7 @@ export function createHud(options: {
       options.llmConfig.reset();
       renderSettings();
     }
+    if (action === "toggle-evidence") { toggleEvidence(); return; }
     if (action === "close-drawer") { drawerOpen = false; renderCurrent(); }
     if (action === "close-evidence") { evidenceOpen = false; renderCurrent(); }
     if (action === "recall" && lastState?.selectedAgentId) options.onRecall(lastState.selectedAgentId);
@@ -357,15 +388,16 @@ export function createHud(options: {
       showPrompt(
         `npc:${npc.id}:${selectedId ? "selected" : "none"}`,
         element("span", "prompt-copy", selectedId
-          ? `${npc.name}：${npc.credibilityCue}；${temperamentCue}。点击头顶气泡开始聊天`
+          ? `${npc.name}：${npc.credibilityCue}；${temperamentCue}。点击角色或头顶气泡开始聊天`
           : `先选择蝌蚪，再和${npc.name}聊天；${npc.credibilityCue}，${temperamentCue}`),
       );
     } else if (state.nearbyObstacleId) {
       const obstacle = demoCase.obstacles.find((candidate) => candidate.id === state.nearbyObstacleId)!;
-      showPrompt(`obstacle:${obstacle.id}:${selectedId ? "selected" : "none"}`, element("span", "prompt-copy", selectedId ? `悬停${obstacle.name}，点击头顶气泡安排清理` : `先选择蝌蚪 · 清理可得 ${obstacle.reward} 灵感`));
+      showPrompt(`obstacle:${obstacle.id}:${selectedId ? "selected" : "none"}`, element("span", "prompt-copy", selectedId ? `点击${obstacle.name}或头顶气泡安排清理` : `先选择蝌蚪 · 清理可得 ${obstacle.reward} 灵感`));
     } else if (state.nearbyFrogId) {
       const frog = demoCase.candidates.find((candidate) => candidate.id === state.nearbyFrogId)!;
-      showPrompt(`frog:${frog.id}`, element("span", "prompt-copy", `${frog.name}正在这里休息`), actionButton("交谈", "talk-mother", "text-button text-button--pink"));
+      const frogName = state.generatedCast?.frogs[frog.id]?.name ?? frog.name;
+      showPrompt(`frog:${frog.id}`, element("span", "prompt-copy", `${frogName}正在这里休息`), actionButton("交谈", "talk-mother", "text-button text-button--pink"));
     } else if (state.nearbyGateId === "dragonfly-gap") {
       const selected = state.selectedAgentIds.length === 1 && selectedId ? state.agents[selectedId] : undefined;
       const scouted = state.scoutedGateIds.includes("dragonfly-gap");
@@ -457,24 +489,28 @@ export function createHud(options: {
       ? "两条独立来源已经拼齐，可以开始判断妈妈是谁。"
       : `已确认 ${sourceCount}/2 条独立来源，继续派蝌蚪去听听河边的朋友。`;
     evidenceChain.replaceChildren();
-    if (state.evidenceLog.length === 0) {
-      evidenceChain.append(element("p", "evidence-chain__empty", "还没有记录。让蝌蚪去聊天、清理或互相对证，线索会贴在这里。"));
+    const clues = collectConfirmedClues(state);
+    if (clues.length === 0) {
+      evidenceChain.append(element("p", "evidence-chain__empty", "还没有对证过的清晰线索。派蝌蚪去听河边的朋友，再让它们互相对证，确认后仍清晰的线索会贴在这里。"));
       return;
     }
-    state.evidenceLog.slice().reverse().forEach((event) => evidenceChain.append(evidenceRow(event, state)));
+    clues.forEach((clue) => evidenceChain.append(clueRow(clue, state)));
   }
 
   function renderEnding(state: Readonly<GameState>): void {
     ending.hidden = state.phase !== "ending" || !state.ending;
     if (!state.ending) return;
     const selected = demoCase.candidates.find((candidate) => candidate.id === state.ending!.selectedMotherId)!;
-    const correct = demoCase.candidates.find((candidate) => candidate.id === demoCase.motherId)!;
+    const motherId = state.generatedCast?.motherId ?? demoCase.motherId;
+    const correct = demoCase.candidates.find((candidate) => candidate.id === motherId)!;
+    const selectedName = state.generatedCast?.frogs[selected.id]?.name ?? selected.name;
+    const correctName = state.generatedCast?.frogs[correct.id]?.name ?? correct.name;
     ending.replaceChildren();
     const panel = element("div", `ending-panel ${state.ending.correct ? "is-correct" : "is-wrong"}`);
     panel.append(
       element("span", "ending-kicker", state.ending.correct ? "找到妈妈" : "认错了"),
-      element("h1", "ending-title", state.ending.correct ? `${correct.name}张开双臂` : `${selected.name}轻轻摇头`),
-      element("p", "ending-copy", state.ending.correct ? "三只蝌蚪把沿途的记忆拼在一起，终于回到了妈妈身边。" : `真正的妈妈是${correct.name}。错误记忆没有说谎，只是缺少了地点或来源。`),
+      element("h1", "ending-title", state.ending.correct ? `${correctName}张开双臂` : `${selectedName}轻轻摇头`),
+      element("p", "ending-copy", state.ending.correct ? "三只蝌蚪把沿途的记忆拼在一起，终于回到了妈妈身边。" : `真正的妈妈是${correctName}。错误记忆没有说谎，只是缺少了地点或来源。`),
     );
     const timeline = element("ol", "evidence-timeline");
     state.evidenceLog.slice(-8).forEach((item) => {
@@ -636,7 +672,7 @@ export function createHud(options: {
       const frog = demoCase.candidates.find((candidate) => candidate.id === current.frogId)!;
       const sourceCount = confirmedSourceCount(state);
       title.textContent = state.generatedCast?.frogs[current.frogId]?.name ?? frog.name;
-      modalContent.append(element("p", "mother-description", state.generatedCast?.frogs[current.frogId]?.appearance ?? frog.description));
+      modalContent.append(element("p", "mother-description", "她停在水边，安静地看着小队。你需要亲自观察她，再和线索本里的证据对照。"));
       if (sourceCount < 2) {
         modalContent.append(element("div", "mother-dialogue", "“你们一路辛苦了。再听听不同朋友怎么说吧，我不想让你们只凭第一印象决定。”"));
         modalContent.append(element("p", "modal-intro", `目前只有 ${sourceCount}/2 个独立来源完成对证。`));
@@ -685,6 +721,11 @@ export function createHud(options: {
     toggleEvidence,
     toggleMemory,
     openMotherChoice,
+    showModelUnavailable(message) {
+      modelGateStatus.textContent = message;
+      modelGate.hidden = false;
+      options.root.dataset.modelPaused = "true";
+    },
     closeModal,
     dispose() {
       options.root.removeEventListener("click", onRootClick);
@@ -727,14 +768,14 @@ function selectedAgentIds(state: Readonly<GameState>): AgentId[] {
 }
 
 function memoryRow(memory: Memory | null, index: number): HTMLElement {
-  const confidenceClass = memory ? ` memory-row--${memory.confidence}` : " memory-row--empty";
-  const row = element("article", `memory-row${memory ? " has-memory" : ""}${confidenceClass}`);
+  const vitality = memory ? memoryVitality(memory) : "empty";
+  const row = element("article", `memory-row${memory ? " has-memory" : ""} memory-row--${vitality}`);
   row.append(element("span", "memory-index", String(index + 1)));
   if (!memory) { row.append(element("span", "memory-empty", "空记忆槽")); return row; }
   const copy = element("div", "memory-copy");
   const fidelity = memory.fidelity === "detailed" ? "细节完整" : memory.fidelity === "compressed" ? "像被精简过" : "只剩片段";
   const transmission = memory.transmission === "mixed" ? "混合记忆" : memory.transmission === "retold" ? "同伴转述" : "亲自听闻";
-  const strength = memory.strength > 70 ? "清晰" : memory.strength > 35 ? "正在变淡" : "模糊";
+  const strength = memory.strength > 70 ? "清晰" : memory.strength > 35 ? "正在流失" : "模糊";
   copy.append(
     element("strong", "", memory.summary),
     element("span", "", `${topicLabels[memory.topic]} · ${memory.rememberedSource} · ${confidenceLabel(memory.confidence)}`),
@@ -744,20 +785,45 @@ function memoryRow(memory: Memory | null, index: number): HTMLElement {
   return row;
 }
 
-function evidenceRow(event: EvidenceEvent, state: Readonly<GameState>): HTMLElement {
-  const kindLabels: Record<EvidenceEvent["kind"], string> = {
-    investigation: "现场听闻",
-    discussion: "蝌蚪对证",
-    cleanup: "清理发现",
-    ability: "能力线索",
-  };
-  const row = element("article", "evidence-note");
-  const agents = event.agentIds.map((agentId) => state.agents[agentId].name).join("、");
-  const topic = event.topic ? ` · ${topicLabels[event.topic]}` : "";
+function memoryVitality(memory: Memory): "clear" | "fading" | "faded" {
+  if (memory.strength > 70) return "clear";
+  if (memory.strength > 35) return "fading";
+  return "faded";
+}
+
+type ConfirmedClue = { memory: Memory; agents: AgentId[] };
+
+function collectConfirmedClues(state: Readonly<GameState>): ConfirmedClue[] {
+  const byFact = new Map<string, ConfirmedClue>();
+  agentOrder.forEach((agentId) => {
+    state.agents[agentId].memories.forEach((memory) => {
+      if (!memory) return;
+      // The notebook keeps only cross-checked (对证) and still-clear clues —
+      // never jump (a skill, not a clue) and never the running commentary the
+      // agents mutter while reconciling ("这条线索更可靠了" and the like).
+      if (memory.topic === "jump") return;
+      if (memory.confidence !== "confirmed") return;
+      if (memory.strength <= 70) return;
+      const key = memory.factIds[0] ?? memory.id;
+      const existing = byFact.get(key);
+      if (existing) {
+        if (!existing.agents.includes(agentId)) existing.agents.push(agentId);
+      } else {
+        byFact.set(key, { memory, agents: [agentId] });
+      }
+    });
+  });
+  return [...byFact.values()].sort((a, b) => b.memory.createdAt - a.memory.createdAt);
+}
+
+function clueRow(clue: ConfirmedClue, state: Readonly<GameState>): HTMLElement {
+  const { memory, agents } = clue;
+  const row = element("article", "evidence-note evidence-note--confirmed");
+  const witnesses = agents.map((agentId) => state.agents[agentId].name).join("、");
   row.append(
-    element("span", "evidence-note__kicker", `${kindLabels[event.kind]}${topic}`),
-    element("strong", "", event.summary),
-    element("small", "", `${event.sourceLabel} · ${agents || "小队记录"}`),
+    element("span", "evidence-note__kicker", `${topicLabels[memory.topic]} · 已印证`),
+    element("strong", "", memory.summary),
+    element("small", "", `${memory.rememberedSource} · ${witnesses}`),
   );
   return row;
 }
@@ -785,6 +851,12 @@ function jumpLabel(value: GameState["agents"][AgentId]["jumpKnowledge"]): string
 
 function confidenceLabel(confidence: Memory["confidence"]): string {
   return confidence === "questioned" ? "存疑" : confidence === "confirmed" ? "已印证" : "相信";
+}
+
+function modelErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : "无法连接大模型。请检查模型配置或网络后重试。";
 }
 
 function actionButton(label: string, action: string, className = "text-button"): HTMLButtonElement {

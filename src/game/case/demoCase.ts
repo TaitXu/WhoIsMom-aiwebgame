@@ -42,9 +42,10 @@ export const demoCase = {
       credibilityCue: "只谈自己反复练过的动作",
       regionId: "spring-grassbank",
       position: [22.5, 0.2, -19],
-      topics: ["jump", "source"],
+      topics: ["jump", "location", "source"],
       facts: [
         { id: "grasshopper-jump", topic: "jump", value: "先压低尾巴，等荷叶回弹时朝下一片叶心跳", place: "春草岸", source: "亲自示范" },
+        { id: "grasshopper-location", topic: "location", value: "练跳的间隙瞥见一个泛绿身影朝东边苇湾蹦走了", time: "今早", place: "春草岸", source: "亲眼瞥见", veracity: "contextual" },
         { id: "grasshopper-source", topic: "source", value: "跳跃方法来自蚱蜢在本地荷叶上的反复练习", place: "春草岸", source: "本地经验" },
       ],
     },
@@ -57,7 +58,7 @@ export const demoCase = {
       credibilityCue: "说得慢，会主动交代时间和自己看见的位置",
       regionId: "turtle-reedbank",
       position: [22, 0.15, 1],
-      topics: ["appearance", "location", "source"],
+      topics: ["appearance", "location", "source", "jump"],
       facts: [
         { id: "turtle-appearance", topic: "appearance", value: "腹部闪过一抹暖黄色", time: "昨晚", place: "本地河道", source: "亲眼所见", veracity: "true" },
         { id: "turtle-head-shape", topic: "appearance", value: "头顶像压着一片圆叶", time: "昨晚", place: "本地河道", source: "亲眼所见", veracity: "true" },
@@ -66,6 +67,7 @@ export const demoCase = {
         { id: "turtle-appearance-after-travel", topic: "appearance", value: "昨晚的影子没有鲜红脚趾", time: "昨晚", place: "本地河道", source: "亲眼所见", veracity: "contextual", requiresAnyFactIds: ["dragonfly-appearance", "dragonfly-back-color"] },
         { id: "turtle-location", topic: "location", value: "它往月牙苇湾去了", time: "昨晚", place: "月牙苇湾", source: "亲眼所见" },
         { id: "turtle-source", topic: "source", value: "乌龟昨晚就在河边亲眼看见它经过", time: "昨晚", place: "本地河道", source: "本地目击" },
+        { id: "turtle-jump", topic: "jump", value: "起跳前先稳住方向，等水面平下来再朝叶片中心发力", place: "乌龟苇岸", source: "岸边观察" },
       ],
     },
     {

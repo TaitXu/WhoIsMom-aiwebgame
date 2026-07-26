@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EncodeMemoryRequest, GenerateCastRequest, GenerateCastResult } from "../src/ai/contracts";
 import { validateAgentRequest, validateAgentResult } from "../src/ai/contracts";
-import {
-  fallbackFrogFeatures,
-  frogFeatureConstraints,
-  frogFeatureVocabulary,
-} from "../src/game/case/frogFeatures";
 
 const request: EncodeMemoryRequest = {
   requestId: "test",
@@ -31,22 +26,24 @@ const castRequest: GenerateCastRequest = {
   agentIds: ["modian", "xiaolang", "paopao"],
   frogIds: ["tree-frog", "bullfrog", "marsh-frog"],
   motherId: "marsh-frog",
-  featureVocabulary: frogFeatureVocabulary,
-  requiredFeatures: frogFeatureConstraints,
 };
 
 function validCast(): GenerateCastResult {
+  const hiddenProfile = {
+    dossier: "遇到陌生事物时会先确认细节，也很在意同伴是否相信自己。",
+    speechRules: "短句，先描述观察，再用问题确认，不轻易下定论。",
+  };
   return {
     task: "generate_cast",
     agents: [
-      { id: "modian", name: "墨点", personality: "cautious", introduction: "先观察再行动。" },
-      { id: "xiaolang", name: "小浪", personality: "impulsive", introduction: "想到就立刻去做。" },
-      { id: "paopao", name: "泡泡", personality: "social", introduction: "喜欢和同伴交流。" },
+      { id: "modian", name: "墨点", personality: "cautious", introduction: "先观察再行动。", hiddenProfile },
+      { id: "xiaolang", name: "小浪", personality: "impulsive", introduction: "想到就立刻去做。", hiddenProfile: { ...hiddenProfile, speechRules: "句子急促，先说结论再补细节，兴奋时会夸张语气。" } },
+      { id: "paopao", name: "泡泡", personality: "social", introduction: "喜欢和同伴交流。", hiddenProfile: { ...hiddenProfile, speechRules: "常引用同伴的话，会邀请别人补充，对冲突先寻找共同点。" } },
     ],
     frogs: [
-      { id: "tree-frog", name: "溪声阿姨", features: { ...fallbackFrogFeatures["tree-frog"] } },
-      { id: "bullfrog", name: "微雨阿姨", features: { ...fallbackFrogFeatures["bullfrog"] } },
-      { id: "marsh-frog", name: "晚风阿姨", features: { ...fallbackFrogFeatures["marsh-frog"] } },
+      { id: "tree-frog", name: "溪声阿姨" },
+      { id: "bullfrog", name: "微雨阿姨" },
+      { id: "marsh-frog", name: "晚风阿姨" },
     ],
   };
 }
@@ -100,7 +97,7 @@ describe("AI contracts", () => {
     })).toBeNull();
   });
 
-  it("requires a contextual or false fact when one is available", () => {
+  it("allows the model to choose any supplied fact without forcing misinformation", () => {
     const mixedRequest: EncodeMemoryRequest = {
       ...request,
       allowedFacts: [
@@ -119,7 +116,7 @@ describe("AI contracts", () => {
     expect(validateAgentResult(mixedRequest, {
       ...baseResult,
       selectedFactIds: ["clear-fact"],
-    })).toBeNull();
+    })).not.toBeNull();
     expect(validateAgentResult(mixedRequest, {
       ...baseResult,
       selectedFactIds: ["misleading-fact"],
@@ -173,6 +170,8 @@ describe("AI contracts", () => {
       requestId: "jump",
       task: "judge_jump_learning" as const,
       agent: { id: "paopao" as const, personality: "social" as const },
+      trainingSourceNpcId: "grasshopper" as const,
+      trainingSummary: "等荷叶回弹时朝下一片叶心跳",
       memories: [jumpMemory],
     };
     expect(validateAgentRequest(jumpRequest)).not.toBeNull();
@@ -181,6 +180,25 @@ describe("AI contracts", () => {
       outcome: "learned",
       relevantMemoryIds: ["jump-memory"],
       spokenSummary: "我懂得怎么跳了。",
+    })).not.toBeNull();
+  });
+
+  it("accepts jump training without consuming a memory slot", () => {
+    const jumpRequest = {
+      requestId: "jump-without-memory",
+      task: "judge_jump_learning" as const,
+      agent: { id: "modian" as const, personality: "cautious" as const },
+      trainingSourceNpcId: "grasshopper" as const,
+      trainingSummary: "等荷叶回弹时朝下一片叶心跳",
+      memories: [],
+    };
+    const validated = validateAgentRequest(jumpRequest);
+    expect(validated).not.toBeNull();
+    expect(validated && validateAgentResult(validated, {
+      task: "judge_jump_learning",
+      outcome: "partial",
+      relevantMemoryIds: [],
+      spokenSummary: "我记住步骤了，但还需要练习。",
     })).not.toBeNull();
   });
 
@@ -235,20 +253,4 @@ describe("AI contracts", () => {
     expect(validateAgentResult(castRequest, cast)).toBeNull();
   });
 
-  it("requires each frog to use a different kind of red decoration", () => {
-    const cast = validCast();
-    cast.frogs[0]!.features = { ...cast.frogs[0]!.features, redAdornment: "scarf" };
-    expect(validateAgentResult(castRequest, cast)).toBeNull();
-  });
-
-  it("rejects a decoy that shares fewer than three features with the mother", () => {
-    const cast = validCast();
-    cast.frogs[0]!.features = {
-      ...cast.frogs[0]!.features,
-      bellyTone: "cream",
-      headAdornment: "reed-crown",
-      hindLegShape: "sturdy",
-    };
-    expect(validateAgentResult(castRequest, cast)).toBeNull();
-  });
 });

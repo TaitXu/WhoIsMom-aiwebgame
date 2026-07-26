@@ -1,6 +1,6 @@
 import type { AgentAdapter } from "./agentService";
 import type { AgentRequest, AgentResponse, AgentResult } from "./contracts";
-import { fallbackFrogFeatures, fallbackFrogNames } from "../game/case/frogFeatures";
+import { fallbackFrogNames } from "../game/case/frogFeatures";
 
 export function createLocalAgentFallback(): AgentAdapter {
   return {
@@ -19,14 +19,13 @@ function fallbackResult(request: AgentRequest): AgentResult {
     return {
       task: "generate_cast",
       agents: [
-        { id: "modian", name: "墨点", personality: "cautious", introduction: "我会把每个细节都记下来。" },
-        { id: "xiaolang", name: "小浪", personality: "impulsive", introduction: "我先去前面看看！" },
-        { id: "paopao", name: "泡泡", personality: "social", introduction: "大家一起游，不要走散。" },
+        { id: "modian", name: "墨点", personality: "cautious", introduction: "我会把每个细节都记下来。", hiddenProfile: { dossier: "慢热而警觉，先确认来源再相信。", speechRules: "句子短，常保留条件，不轻易下结论。" } },
+        { id: "xiaolang", name: "小浪", personality: "impulsive", introduction: "我先去前面看看！", hiddenProfile: { dossier: "追逐新鲜感，容易被醒目的细节吸引。", speechRules: "语速快，表达肯定，容易省略地点和时间。" } },
+        { id: "paopao", name: "泡泡", personality: "social", introduction: "大家一起游，不要走散。", hiddenProfile: { dossier: "在意同伴反应，喜欢通过提问理解别人。", speechRules: "常用问句，会提到对方的态度和语气。" } },
       ],
       frogs: request.frogIds.map((id) => ({
         id,
         name: fallbackFrogNames[id],
-        features: fallbackFrogFeatures[id],
       })),
     };
   }
@@ -69,6 +68,7 @@ function fallbackResult(request: AgentRequest): AgentResult {
       tone: personality === "impulsive" ? "excited" : personality === "cautious" ? "calm" : "calm",
       fidelity: tired ? "fragmented" : compressed ? "compressed" : "detailed",
       spokenSummary: summarizeFact(fact, personality, request.agent.communicationStyle, request.agent.fatigue, omittedFields),
+      afterthought: "这句话我得找机会和大家对一对。",
     };
   }
 

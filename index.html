@@ -40,11 +40,11 @@
             <span class="badge-label">灵感</span>
             <strong data-inspiration>0</strong>
           </div>
-          <div class="resource-block resource-block--green">
+          <button type="button" class="resource-block resource-block--green" data-action="toggle-evidence" aria-label="打开线索本" title="线索本 (M)">
             <span class="badge-icon badge-icon--egg" aria-hidden="true"></span>
             <span class="badge-label">线索</span>
             <strong data-evidence>0/2</strong>
-          </div>
+          </button>
           <button class="icon-button settings-button" type="button" data-action="open-settings" aria-label="打开游戏设置" title="游戏设置">⚙</button>
         </div>
       </section>
@@ -109,6 +109,7 @@
             <button class="start-screen__menu-item start-screen__menu-item--primary" type="button" data-action="start-game">开始游戏</button>
             <button class="start-screen__menu-item" type="button" data-action="open-settings">设置选项</button>
           </nav>
+          <p class="start-screen__status" data-start-status aria-live="polite"></p>
           <span class="start-screen__hint">带领三只性格不同的小蝌蚪，寻找真正的妈妈。</span>
         </div>
       </section>
@@ -118,7 +119,18 @@
           <h2 id="loading-title">正在准备这一次相遇</h2>
           <div class="loading-screen__spinner" aria-hidden="true"></div>
           <p data-loading-status>正在唤醒河流里的 Agent…</p>
-          <span>每一局的性格和记忆都会有一点不同。</span>
+          <span>连接成功后，NPC 对话和记忆将由大模型生成。</span>
+        </div>
+      </section>
+      <section class="model-gate" data-model-gate hidden aria-live="assertive" aria-labelledby="model-gate-title">
+        <div class="model-gate__panel">
+          <span class="modal-kicker">AI CONNECTION REQUIRED</span>
+          <h2 id="model-gate-title">大模型连接中断</h2>
+          <p data-model-gate-status>游戏已暂停，本次对话不会生成记忆。</p>
+          <div class="model-gate__actions">
+            <button class="text-button text-button--green" type="button" data-action="retry-model">重新连接</button>
+            <button class="text-button text-button--plain" type="button" data-action="open-settings">模型设置</button>
+          </div>
         </div>
       </section>
       <section class="settings-panel" data-settings-panel hidden aria-labelledby="settings-title">
@@ -140,7 +152,7 @@
             <span>由游戏服务端代理请求，浏览器不会接触默认 API Key。</span>
           </section>
           <section class="settings-mode-panel" data-llm-custom-panel hidden>
-            <label class="settings-field"><span>模型服务地址</span><input data-llm-base-url type="url" autocomplete="off" placeholder="https://api.example.com/v1" /></label>
+            <label class="settings-field"><span>模型服务地址</span><input data-llm-base-url type="url" autocomplete="off" placeholder="https://api.example.com/v1 或完整 /chat/completions 地址" /></label>
             <label class="settings-field"><span>模型名称</span><input data-llm-model type="text" autocomplete="off" placeholder="例如 gpt-4o-mini" /></label>
             <label class="settings-field"><span>API Key</span><input data-llm-api-key type="password" autocomplete="off" placeholder="只保存在本机浏览器" /></label>
           </section>

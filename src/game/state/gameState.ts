@@ -25,14 +25,14 @@ function createAgentState(id: AgentId, name: string, personality: Personality): 
   };
 }
 
-export function createInitialGameState(): GameState {
+export function createInitialGameState(sessionSeed = 73129): GameState {
   const agents = Object.fromEntries(
     agentDefinitions.map(({ id, name, personality }) => [id, createAgentState(id, name, personality)]),
   ) as Record<AgentId, AgentState>;
 
   return {
     phase: "explore",
-    sessionSeed: 73129,
+    sessionSeed,
     inspiration: 0,
     currentRegionId: "hatching-pool",
     discoveredRegionIds: ["hatching-pool"],

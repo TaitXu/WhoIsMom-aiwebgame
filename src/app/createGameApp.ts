@@ -1,17 +1,20 @@
 import * as THREE from "three";
-import type { AgentId, FrogId, GateId, NpcId, ObstacleId, GeneratedCast } from "../core/types";
+import type {
+  AgentId,
+  FrogId,
+  GateId,
+  GeneratedCast,
+  NpcId,
+  ObstacleId,
+} from "../core/types";
 import { createAgentService } from "../ai/agentService";
-import { createLocalAgentFallback } from "../ai/localAgentFallback";
 import { createLlmConfigStore } from "../ai/llmConfig";
 import { createRemoteAgentAdapter } from "../ai/remoteAgentAdapter";
 import { createGameSoundEffects } from "../audio/gameSoundEffects";
 import { createDebugPanel } from "../diagnostics/createDebugPanel";
 import { demoCase } from "../game/case/demoCase";
-import {
-  describeFrogFeatures,
-  frogFeatureConstraints,
-  frogFeatureVocabulary,
-} from "../game/case/frogFeatures";
+import { describeFrogFeatures } from "../game/case/frogFeatures";
+import { createSessionCase, randomSessionSeed, sessionPersonalityOrder } from "../game/case/sessionGenerator";
 import { createGameDirector } from "../game/simulation/gameDirector";
 import { createInitialGameState } from "../game/state/gameState";
 import { createGameStore } from "../game/state/gameStore";
@@ -30,44 +33,88 @@ export interface GameApp {
 }
 
 const agentOrder: AgentId[] = ["modian", "xiaolang", "paopao"];
+const agentNames: Record<AgentId, string> = {
+  modian: "墨点",
+  xiaolang: "小浪",
+  paopao: "泡泡",
+};
 
 export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasElement }): GameApp {
   const host = createRenderHost(options.canvas);
-  const store = createGameStore(createInitialGameState());
+  let activeCase = createSessionCase(randomSessionSeed());
+  const store = createGameStore(createInitialGameState(activeCase.seed));
   const llmConfig = createLlmConfigStore();
-  const service = createAgentService(createRemoteAgentAdapter("/api/agent", 22_000, llmConfig), createLocalAgentFallback());
-  const director = createGameDirector({ store, service });
+  const service = createAgentService(createRemoteAgentAdapter("/api/agent", 120_000, llmConfig));
+  const director = createGameDirector({ store, service, getCase: () => activeCase });
   const sounds = createGameSoundEffects(options.root);
   let gameStarted = false;
+  let gamePaused = false;
 
-  async function startGame(): Promise<void> {
+  async function prepareNewSession(): Promise<void> {
+    const nextCase = createSessionCase(randomSessionSeed());
+    const frogIds = nextCase.candidates.map((candidate) => candidate.id);
+
     const response = await service.generateCast({
-      requestId: `cast-${Date.now()}`,
+      requestId: `cast-${nextCase.seed}`,
       task: "generate_cast",
-      seed: store.getState().sessionSeed,
+      seed: nextCase.seed,
       agentIds: [...agentOrder],
-      frogIds: demoCase.candidates.map((candidate) => candidate.id),
-      motherId: demoCase.motherId,
-      featureVocabulary: frogFeatureVocabulary,
-      requiredFeatures: frogFeatureConstraints,
+      frogIds,
+      motherId: nextCase.motherId,
     });
-    if (response.result.task !== "generate_cast") throw new Error("Invalid cast result");
+    if (response.result.task !== "generate_cast") throw new Error("大模型没有返回有效的本局角色");
+    const generatedCast = response.result;
+    const personalityOrder = sessionPersonalityOrder(nextCase.seed);
+
     const cast: GeneratedCast = {
-      agents: Object.fromEntries(response.result.agents.map((profile) => [profile.id, {
-        name: profile.name,
-        personality: profile.personality,
-        introduction: profile.introduction,
-      }])) as GeneratedCast["agents"],
-      frogs: Object.fromEntries(response.result.frogs.map((profile) => [profile.id, {
-        name: profile.name,
-        appearance: describeFrogFeatures(profile.features),
-        features: profile.features,
+      motherId: nextCase.motherId,
+      agents: Object.fromEntries(agentOrder.map((agentId, index) => {
+        const personality = personalityOrder[index]!;
+        const generated = generatedCast.agents.find((agent) => agent.personality === personality)!;
+        return [agentId, {
+          name: agentNames[agentId],
+          personality,
+          introduction: generated.introduction,
+          hiddenProfile: generated.hiddenProfile,
+        }];
+      })) as GeneratedCast["agents"],
+      frogs: Object.fromEntries(nextCase.candidates.map((candidate) => [candidate.id, {
+        name: generatedCast.frogs.find((frog) => frog.id === candidate.id)!.name,
+        appearance: describeFrogFeatures(candidate.features),
+        features: candidate.features,
       }])) as GeneratedCast["frogs"],
     };
-    response.result.frogs.forEach((profile) => views.frogs[profile.id].applyAppearance(profile.features));
+
+    activeCase = nextCase;
+    director.reset(nextCase.seed);
     store.dispatch({ type: "APPLY_GENERATED_CAST", cast });
+    nextCase.candidates.forEach((candidate) => {
+      views.frogs[candidate.id].applyAppearance(cast.frogs[candidate.id].features);
+    });
+    world.reset();
     gameStarted = true;
+    gamePaused = false;
+  }
+
+  async function startGame(): Promise<void> {
+    await prepareNewSession();
     sounds.play("start");
+  }
+
+  async function restartGame(): Promise<void> {
+    gamePaused = true;
+    try {
+      await prepareNewSession();
+      hud.closeModal();
+      sounds.play("start");
+    } catch {
+      // The managed service raises the pause overlay and preserves the old session.
+    }
+  }
+
+  async function retryModelConnection(): Promise<void> {
+    await service.checkAvailability();
+    gamePaused = false;
   }
 
   const player = createPlayerFish(host.palette);
@@ -137,6 +184,21 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
     store.dispatch({ type: "SET_OBJECTIVE", objective: message });
     sounds.play("deny");
   };
+  const attemptConversation = (agentIds: AgentId[], npcId: NpcId): void => {
+    const state = store.getState();
+    if (npcId === "dragonfly" && !state.scoutedGateIds.includes("dragonfly-gap")) {
+      setFailureObjective("旅行蜻蜓在叶隙对岸，请先选择会跳跃的蝌蚪过去侦察");
+      return;
+    }
+    if (!director.startConversation(agentIds, npcId)) {
+      setFailureObjective("先选择空闲、没那么疲惫的蝌蚪再聊天");
+    }
+  };
+  const attemptCleanup = (agentIds: AgentId[], obstacleId: ObstacleId): void => {
+    if (!director.startCleanup(agentIds, obstacleId)) {
+      setFailureObjective("换一组空闲、没那么疲惫的蝌蚪再试试");
+    }
+  };
   const attemptScoutGate = (gateId: GateId): boolean => {
     const state = store.getState();
     if (state.nearbyGateId !== gateId) {
@@ -167,14 +229,11 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
     root: options.root,
     llmConfig,
     onStart: startGame,
+    onRetryModel: retryModelConnection,
     onSelect: selectAgent,
     onRecall: (agentId) => director.recall(agentId),
-    onInvestigate: (agentIds, npcId) => {
-      if (!director.startConversation(agentIds, npcId)) setFailureObjective("先选择空闲、没那么疲惫的蝌蚪再聊天");
-    },
-    onCleanup: (agentIds, obstacleId) => {
-      if (!director.startCleanup(agentIds, obstacleId)) setFailureObjective("换一组空闲、没那么疲惫的蝌蚪再试试");
-    },
+    onInvestigate: attemptConversation,
+    onCleanup: attemptCleanup,
     onDiscuss: (firstId, secondId, topic) => {
       if (!director.startDiscussion(firstId, secondId, topic)) setFailureObjective("它们还没有可以互相核对的记忆");
     },
@@ -189,14 +248,20 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
     onChooseMother: (frogId) => director.chooseMother(frogId),
     onDemoEnding: (correct) => store.dispatch({
       type: "DEMO_ENDING",
-      frogId: correct ? demoCase.motherId : "tree-frog",
+      frogId: correct
+        ? activeCase.motherId
+        : activeCase.candidates.find((candidate) => candidate.id !== activeCase.motherId)!.id,
       correct,
     }),
-    onRestart: () => {
-      director.reset();
-      world.reset();
-      hud.closeModal();
-    },
+    onRestart: () => { void restartGame(); },
+  });
+
+  const unsubscribeModel = service.subscribe((status, error) => {
+    if (status !== "unavailable" || !gameStarted) return;
+    gamePaused = true;
+    director.abortAiActions();
+    hud.showModelUnavailable(error?.message ?? "大模型连接中断，游戏已暂停。请检查模型配置后重试。");
+    sounds.play("deny");
   });
 
   let previousState = store.getState();
@@ -230,7 +295,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
       if (selected) director.recall(selected);
     },
     onWhistle() {
-      if (!gameStarted) return;
+      if (!gameStarted || gamePaused) return;
       sounds.play("whistle");
       const recalled = world.whistle(7.5);
       store.dispatch({ type: "SET_OBJECTIVE", objective: recalled > 0 ? `口哨响起，${recalled} 只蝌蚪正在回到身边` : "口哨响起，附近没有需要召回的蝌蚪" });
@@ -251,14 +316,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
       const state = store.getState();
       if (target.type === "agent") { selectAgent(target.id as AgentId); return; }
       if (target.type === "npc") {
-        const id = target.id as NpcId;
-        if (id === "dragonfly" && !state.scoutedGateIds.includes("dragonfly-gap")) {
-          setFailureObjective("旅行蜻蜓在叶隙对岸，请先选择会跳跃的蝌蚪过去侦察");
-          return;
-        }
-        if (!director.startConversation(state.selectedAgentIds, id)) {
-          setFailureObjective("先选择空闲、没那么疲惫的蝌蚪再聊天");
-        }
+        attemptConversation(state.selectedAgentIds, target.id as NpcId);
         return;
       }
       if (target.type === "frog") {
@@ -272,8 +330,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
         return;
       }
       if (target.type === "obstacle") {
-        const id = target.id as ObstacleId;
-        if (state.nearbyObstacleId !== id) setFailureObjective("先带队靠近需要清理的东西");
+        attemptCleanup(state.selectedAgentIds, target.id as ObstacleId);
         return;
       }
       if (target.type === "gate") {
@@ -381,7 +438,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
       const screen = projectToHud(views.npcs[id].group, 1.65);
       if (screen) bubbles.push({ targetType: "npc", targetId: id, label: "聊一聊", detail: `${selectedIds.length} 只蝌蚪`, ...screen });
     }
-    if (selectedIds.length > 0 && hoveredTarget?.type === "obstacle" && state.nearbyObstacleId === hoveredTarget.id) {
+    if (selectedIds.length > 0 && hoveredTarget?.type === "obstacle") {
       const id = hoveredTarget.id as ObstacleId;
       const obstacle = demoCase.obstacles.find((candidate) => candidate.id === id)!;
       const screen = projectToHud(host.environment.obstacles[id], 1.35);
@@ -419,7 +476,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
   }
   const onResize = (): void => host.resize();
   const loop = createGameLoop(host.renderer, (delta, elapsed) => {
-    if (!gameStarted) {
+    if (!gameStarted || gamePaused) {
       host.render(elapsed);
       return;
     }
@@ -453,6 +510,7 @@ export function createGameApp(options: { root: HTMLElement; canvas: HTMLCanvasEl
       input.dispose();
       debugPanel.dispose();
       unsubscribe();
+      unsubscribeModel();
       hud.dispose();
       sounds.dispose();
       delete debugWindow.__WHO_IS_MOM_DEBUG__;

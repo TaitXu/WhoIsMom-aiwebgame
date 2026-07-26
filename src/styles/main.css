@@ -318,6 +318,7 @@
 
 .start-screen,
 .loading-screen,
+.model-gate,
 .settings-panel {
   position: absolute;
   inset: 0;
@@ -360,6 +361,7 @@
 .start-screen__menu-item:focus-visible { color: var(--yellow); outline: none; transform: translateY(-2px); }
 .start-screen__menu-item--primary { color: var(--yellow); font-size: 24px; }
 .start-screen__hint { display: block; margin-top: 32px; color: rgba(255, 245, 207, 0.72); font-size: 11px; font-weight: 800; }
+.start-screen__status { max-width: 520px; min-height: 20px; margin: 20px auto -14px; color: var(--coral-light); font-size: 12px; font-weight: 900; line-height: 1.55; }
 
 .loading-screen { z-index: 45; background: rgba(17, 38, 48, 0.58); }
 .loading-screen__panel { padding: 34px; text-align: center; transform: rotate(-0.4deg); }
@@ -367,6 +369,12 @@
 .loading-screen__panel p { min-height: 20px; margin: 17px 0 6px; color: var(--green-deep); font-size: 13px; font-weight: 900; }
 .loading-screen__panel > span:last-child { color: var(--ink-soft); font-size: 10px; font-weight: 800; }
 .loading-screen__spinner { width: 42px; height: 42px; margin: 0 auto; border: 4px solid rgba(41, 73, 67, 0.18); border-top-color: var(--green-deep); border-radius: 50%; animation: loading-spin 0.85s linear infinite; }
+
+.model-gate { z-index: 49; background: rgba(17, 38, 48, 0.68); }
+.model-gate__panel { width: min(480px, calc(100vw - 32px)); padding: 28px; border: 3px solid var(--ink); background: var(--paper); box-shadow: 9px 10px 0 rgba(17, 38, 48, 0.28); text-align: center; transform: rotate(-0.3deg); }
+.model-gate__panel h2 { margin: 8px 0 12px; font-size: 28px; }
+.model-gate__panel p { margin: 0 auto; color: var(--ink-soft); font-size: 13px; font-weight: 800; line-height: 1.65; }
+.model-gate__actions { display: flex; justify-content: center; gap: 10px; margin-top: 22px; }
 @keyframes loading-spin { to { transform: rotate(360deg); } }
 
 .settings-panel { z-index: 50; }
@@ -446,6 +454,8 @@
 
 .resource-block--yellow { background: var(--yellow); transform: rotate(-3deg); }
 .resource-block--green { background: var(--green); transform: rotate(3deg); }
+button.resource-block { font: inherit; color: inherit; cursor: pointer; }
+button.resource-block:hover { filter: brightness(1.05); }
 .badge-label { font-size: 8px; font-weight: 900; line-height: 1; }
 .area-block .badge-label { align-self: end; }
 .resource-block .badge-label { grid-row: 2; }
@@ -534,7 +544,7 @@
   grid-template-rows: auto auto auto 5px;
   column-gap: 8px;
   row-gap: 3px;
-  width: 116px;
+  width: 124px;
   min-height: 91px;
   padding: 13px 10px 9px;
   color: var(--ink);
@@ -702,9 +712,10 @@
 .memory-row { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr); min-height: 61px; align-items: center; padding: 10px 10px 9px 8px; border: 3px dashed rgba(41, 73, 67, 0.28); border-radius: 8px 4px 10px 5px; background: rgba(255, 248, 223, 0.52); transform: rotate(-0.8deg); }
 .memory-row:nth-child(2) { transform: rotate(0.9deg); }
 .memory-row:nth-child(3) { transform: rotate(-0.3deg); }
-.memory-row.has-memory { border-style: solid; background: var(--yellow); }
-.memory-row--questioned { background: var(--coral); }
-.memory-row--confirmed { background: var(--green); }
+.memory-row.has-memory { border-style: solid; }
+.memory-row--clear { background: var(--green); }
+.memory-row--fading { background: var(--stone); }
+.memory-row--faded { background: var(--stone-deep); }
 .memory-row::after { content: ""; position: absolute; top: -5px; right: 22px; width: 31px; height: 9px; border: 2px solid var(--ink); background: var(--paper-light); transform: rotate(4deg); }
 .memory-index { display: grid; width: 23px; height: 23px; place-items: center; color: var(--ink); font-size: 10px; font-weight: 900; border: 2px solid var(--ink); border-radius: 50%; background: var(--paper-light); }
 .memory-empty { color: rgba(41, 73, 67, 0.58); font-size: 10px; font-weight: 800; }
@@ -712,7 +723,7 @@
 .memory-copy span { display: block; }
 .memory-copy strong { font-size: 11px; line-height: 1.45; }
 .memory-copy span { margin-top: 4px; color: var(--ink-soft); font-size: 9px; font-weight: 700; }
-.memory-provenance { display: block; margin-top: 4px; color: var(--green-deep); font-size: 8px; font-weight: 900; }
+.memory-provenance { display: block; margin-top: 4px; color: var(--ink-soft); font-size: 8px; font-weight: 900; }
 .drawer-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .drawer-actions .text-button { flex: 1 1 150px; }
 

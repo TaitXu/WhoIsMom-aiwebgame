@@ -72,8 +72,19 @@ export type NpcIntimidation = "none" | "mild" | "high";
 export type AgentResultSource = "model" | "fallback";
 export type JumpKnowledge = "none" | "partial" | "learned";
 
+export type HiddenPersonalityProfile = Readonly<{
+  dossier: string;
+  speechRules: string;
+}>;
+
 export type GeneratedCast = Readonly<{
-  agents: Record<AgentId, Readonly<{ name: string; personality: Personality; introduction: string }>>;
+  motherId: FrogId;
+  agents: Record<AgentId, Readonly<{
+    name: string;
+    personality: Personality;
+    introduction: string;
+    hiddenProfile: HiddenPersonalityProfile;
+  }>>;
   frogs: Record<FrogId, Readonly<{ name: string; appearance: string; features: FrogFeatures }>>;
 }>;
 
@@ -136,6 +147,7 @@ export type AgentState = {
   name: string;
   personality: Personality;
   communicationStyle: CommunicationStyle;
+  hiddenProfile?: HiddenPersonalityProfile;
   mode: AgentMode;
   memories: Array<Memory | null>;
   memoryCapacity: 3 | 4 | 5;
@@ -239,6 +251,7 @@ export type GameCommand =
       evidence: EvidenceEvent;
       fatigue: number;
     }
+  | { type: "COMPLETE_JUMP_TRAINING"; agentId: AgentId; taskId: string; evidence: EvidenceEvent; fatigue: number }
   | { type: "START_CLEANUP"; task: CleanupTask }
   | { type: "BEGIN_WORK"; agentId: AgentId; taskId: string }
   | {
@@ -269,9 +282,10 @@ export type GameCommand =
       updates: MemoryUpdate[];
       evidence: EvidenceEvent;
     }
+  | { type: "CANCEL_AI_ACTIONS" }
   | { type: "SET_OBJECTIVE"; objective: string }
   | { type: "APPLY_GENERATED_CAST"; cast: GeneratedCast }
   | { type: "REVEAL_CANDIDATE_FROGS" }
   | { type: "CHOOSE_MOTHER"; frogId: FrogId; correct: boolean }
   | { type: "DEMO_ENDING"; frogId: FrogId; correct: boolean }
-  | { type: "RESET_GAME" };
+  | { type: "RESET_GAME"; seed?: number };

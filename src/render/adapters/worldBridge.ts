@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { AgentId, AgentState, FrogId, GateId, NpcId, ObstacleId, RegionId } from "../../core/types";
-import { calculateActivityTarget, calculateFollowTarget } from "../../game/agents/following";
+import { calculateFollowTarget } from "../../game/agents/following";
 import { getPersonalityMotion } from "../../game/agents/personality";
 import { demoCase } from "../../game/case/demoCase";
 import type { GameDirector } from "../../game/simulation/gameDirector";
@@ -52,7 +52,6 @@ export function createWorldBridge(options: {
   const playerVelocity = new THREE.Vector3();
   const playerDirection = new THREE.Vector3(0, 0, -1);
   const followTarget = new THREE.Vector3();
-  const activityTarget = new THREE.Vector3();
   const moveDelta = new THREE.Vector3();
   const requestedStep = new THREE.Vector3();
   const appliedStep = new THREE.Vector3();
@@ -163,12 +162,17 @@ export function createWorldBridge(options: {
     requestedStep.set(0, 0, 0);
     moveDelta.copy(target).sub(view.group.position).setY(0);
     const distance = moveDelta.length();
-    if (distance > 0.001) {
+    if (distance > 0.04) {
       const step = Math.min(distance, speed * delta);
       requestedStep.copy(moveDelta).normalize().multiplyScalar(step);
       tryMove(view, requestedStep, radius);
-      const desiredYaw = Math.atan2(-moveDelta.x, -moveDelta.z);
-      view.group.rotation.y = dampAngle(view.group.rotation.y, desiredYaw, 9, delta);
+      // Only re-face when there is real ground to cover. Right on top of the
+      // target the direction vector is near-zero and flips frame-to-frame,
+      // which makes the model look like it is shaking in place.
+      if (distance > 0.12) {
+        const desiredYaw = Math.atan2(-moveDelta.x, -moveDelta.z);
+        view.group.rotation.y = dampAngle(view.group.rotation.y, desiredYaw, 9, delta);
+      }
     }
     return moveDelta.copy(target).sub(view.group.position).setY(0).length();
   }
@@ -441,13 +445,13 @@ export function createWorldBridge(options: {
         speed = moveToward(view, followTarget, motion.speed * 0.62, delta, AGENT_COLLISION_RADIUS);
       } else if (agent.mode === "following" || agent.mode === "returning" || agent.mode === "tired") {
         gateRoamAnchors.delete(agentId);
-        const isMoving = playerVelocity.lengthSq() > 0.06;
-        if (agent.mode === "following" && !isMoving) {
-          calculateActivityTarget(player.position, playerDirection, motion, agent.personality, index, elapsed, activityTarget);
-          followTarget.copy(activityTarget);
-        } else {
-          calculateFollowTarget(player.position, playerDirection, motion, index, followTarget);
-        }
+        // Always hold the stable formation slot. The previous idle orbit
+        // (calculateActivityTarget) drifted the target slowly enough that the
+        // movement dead-zone turned that drift into discrete micro-steps plus
+        // intermittent re-facing — exactly the "jitter" the eye picks up.
+        // A stable slot lets idle animation (tail swing + body bob) carry the
+        // alive feel without any position noise.
+        calculateFollowTarget(player.position, playerDirection, motion, index, followTarget);
         applySoftSeparation(followTarget, AGENT_COLLISION_RADIUS, view.group);
         const fatigueScale = agent.mode === "tired" ? 0.62 : 1 - agent.fatigue * 0.0035;
         const distance = moveToward(view, followTarget, motion.speed * fatigueScale, delta, AGENT_COLLISION_RADIUS);
@@ -457,6 +461,15 @@ export function createWorldBridge(options: {
           agent.mode === "returning" &&
           (distance < 0.3 || view.group.position.distanceTo(player.position) < 4.2)
         ) options.store.dispatch({ type: "FINISH_RETURN", agentId });
+        // Idle glance: a settled follower eases its facing toward the leader's
+        // heading with a glacial sway, so it reads as alert without chasing a
+        // moving target — the old jitter path. Only when truly settled (well
+        // inside the re-face dead-zone), so it never fights moveToward.
+        if (agent.mode === "following" && distance < 0.12) {
+          const baseYaw = Math.atan2(-playerDirection.x, -playerDirection.z);
+          const sway = Math.sin(elapsed * 0.45 + index * 2.1) * 0.16;
+          view.group.rotation.y = dampAngle(view.group.rotation.y, baseYaw + sway, 1.5, delta);
+        }
       } else if (agent.mode === "approaching" && agent.activeTask) {
         gateRoamAnchors.delete(agentId);
         const target = agent.activeTask.type === "investigation"

@@ -3,7 +3,6 @@ import type { GenerateCastRequest } from "../src/ai/contracts";
 import { validateAgentResult } from "../src/ai/contracts";
 import { createLocalAgentFallback } from "../src/ai/localAgentFallback";
 import type { Memory } from "../src/core/types";
-import { frogFeatureConstraints, frogFeatureKeys, frogFeatureVocabulary } from "../src/game/case/frogFeatures";
 
 function memory(id: string, createdAt: number): Memory {
   return {
@@ -26,7 +25,7 @@ function memory(id: string, createdAt: number): Memory {
 }
 
 describe("local agent fallback", () => {
-  it("returns a validated seven-feature frog puzzle with three different red decorations", async () => {
+  it("returns a validated cast with private personality profiles", async () => {
     const request: GenerateCastRequest = {
       requestId: "cast",
       task: "generate_cast",
@@ -34,14 +33,11 @@ describe("local agent fallback", () => {
       agentIds: ["modian", "xiaolang", "paopao"],
       frogIds: ["tree-frog", "bullfrog", "marsh-frog"],
       motherId: "marsh-frog",
-      featureVocabulary: frogFeatureVocabulary,
-      requiredFeatures: frogFeatureConstraints,
     };
     const response = await createLocalAgentFallback().run(request);
     expect(validateAgentResult(request, response.result)).not.toBeNull();
     if (response.result.task === "generate_cast") {
-      expect(response.result.frogs.every((frog) => Object.keys(frog.features).length === frogFeatureKeys.length)).toBe(true);
-      expect(new Set(response.result.frogs.map((frog) => frog.features.redAdornment)).size).toBe(3);
+      expect(response.result.agents.every((agent) => agent.hiddenProfile.dossier.length > 0)).toBe(true);
     }
   });
 

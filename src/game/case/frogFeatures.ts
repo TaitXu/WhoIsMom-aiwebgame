@@ -127,6 +127,13 @@ export function describeFrogFeatures(features: FrogFeatures): string {
   ].join("、");
 }
 
+export function describeFrogFeature<Key extends keyof FrogFeatures>(
+  key: Key,
+  value: FrogFeatures[Key],
+): string {
+  return featureLabels[key][value];
+}
+
 export function frogFeatureVector(features: FrogFeatures): string {
   return frogFeatureKeys.map((key) => features[key]).join("|");
 }
