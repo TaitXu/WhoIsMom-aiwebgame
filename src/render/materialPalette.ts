@@ -1,15 +1,16 @@
 import * as THREE from "three";
+import { stylizedSurface } from "./stylizedSurface";
 
 export const worldColors = {
-  sky: 0xdedff0,
-  water: 0x58c8cf,
-  waterDeep: 0x38a8bb,
-  waterLight: 0xa8ebe1,
-  bank: 0xdd8768,
-  bankLight: 0xf1ad7d,
-  grass: 0x7bc964,
-  leaf: 0x3e9c6d,
-  canopy: 0xf3ce5a,
+  sky: 0xb5b09c,
+  water: 0x399f9f,
+  waterDeep: 0x146878,
+  waterLight: 0xb0d9c0,
+  bank: 0xc4aa75,
+  bankLight: 0xe4cf99,
+  grass: 0x8c9860,
+  leaf: 0x4c7045,
+  canopy: 0xc7b66d,
   ink: 0x163e46,
   tadpole: 0x29464c,
   player: 0x57bd78,
@@ -41,7 +42,7 @@ export function createMaterialPalette(): MaterialPalette {
     toon(color) {
       let material = toonCache.get(color);
       if (!material) {
-        material = new THREE.MeshToonMaterial({ color, gradientMap });
+        material = stylizedSurface(color);
         toonCache.set(color, material);
       }
       return material;

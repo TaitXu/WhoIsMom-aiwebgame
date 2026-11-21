@@ -38,7 +38,10 @@ export function createRenderHost(canvas: HTMLCanvasElement): RenderHost {
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-  renderer.shadowMap.enabled = false;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
 
   const cameraRig = createCameraRig();
   const palette = createMaterialPalette();
@@ -47,7 +50,7 @@ export function createRenderHost(canvas: HTMLCanvasElement): RenderHost {
   const environment = buildEnvironment(palette);
   worldRoot.add(environment.group);
   scene.add(worldRoot);
-  createLightingRig(scene);
+  const lighting = createLightingRig(scene);
   const pixelDiagnostics: PixelDiagnostics = {
     width: 0,
     height: 0,
@@ -90,7 +93,9 @@ export function createRenderHost(canvas: HTMLCanvasElement): RenderHost {
     environment,
     resize,
     render(elapsed) {
+      lighting.position.set(cameraRig.camera.position.x, 0, cameraRig.camera.position.z - 17 * cameraRig.getDistanceScale());
       environment.update(elapsed);
+      environment.renderUnderwater(renderer, scene, cameraRig.camera);
       renderer.render(scene, cameraRig.camera);
       frame += 1;
       canvas.dataset.renderCalls = String(renderer.info.render.calls);
@@ -110,6 +115,7 @@ export function createRenderHost(canvas: HTMLCanvasElement): RenderHost {
           materials.forEach((material) => material.dispose());
         }
       });
+      environment.dispose();
       palette.dispose();
       renderer.dispose();
     },

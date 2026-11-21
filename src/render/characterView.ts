@@ -58,6 +58,8 @@ export function createCharacterView(options: {
       if (material) statusMarker.material = material;
     },
     update(elapsed, speed, delta = 1 / 60) {
+      const animate = motionRoot.userData.animate as ((time: number, activity: number) => void) | undefined;
+      animate?.(elapsed, activity);
       const targetActivity = THREE.MathUtils.clamp(speed / 4, 0, 1);
       activity = THREE.MathUtils.damp(activity, targetActivity, 8, delta);
       const working = mode === "working" ? 1 : 0;

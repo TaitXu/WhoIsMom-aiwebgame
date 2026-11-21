@@ -56,7 +56,7 @@ export function createCanopyShadow(): CanopyShadow {
 
 function createLeafShadows(): THREE.InstancedMesh {
   const count = canopyClusters.reduce((total, cluster) => total + cluster.leaves, 0);
-  const material = createShadowMaterial(0.12);
+  const material = createShadowMaterial(0.035);
   const mesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 9), material, count);
   mesh.name = "canopy-leaf-shadows";
   mesh.renderOrder = 2;

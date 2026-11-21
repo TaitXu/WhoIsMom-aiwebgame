@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { createLandmarkModel } from "./landmarkModels";
+import { createContinuousWetland } from "./continuousWetland";
 import type { GateId, ObstacleId } from "../core/types";
 import { demoCase } from "../game/case/demoCase";
 import { createCanopyShadow } from "./canopyShadow";
@@ -12,6 +14,8 @@ export interface EnvironmentView {
   restPosition: THREE.Vector3;
   colliders: readonly TerrainCollider[];
   update(elapsed: number): void;
+  renderUnderwater(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera): void;
+  dispose(): void;
   setObstacleCleared(id: ObstacleId, cleared: boolean): void;
   setGateOpen(id: GateId, open: boolean): void;
   canOccupy(position: THREE.Vector3, radius: number): boolean;
@@ -25,34 +29,20 @@ export type TerrainCollider = Readonly<{
   rotation: number;
 }>;
 
-interface WaterHighlights {
-  mesh: THREE.InstancedMesh;
-  positions: THREE.Vector3[];
-  rotations: number[];
-  widths: number[];
-  dummy: THREE.Object3D;
-}
-
 export function buildEnvironment(palette: MaterialPalette): EnvironmentView {
   const group = new THREE.Group();
   group.name = "nine-region-wetland";
   const colliders: TerrainCollider[] = [];
 
-  // Keep the visible water larger than the playable area so the current
-  // boundary fades into the scene instead of reading as a square platform.
-  const base = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), palette.toon(worldColors.waterDeep));
-  base.rotation.x = -Math.PI / 2;
-  base.position.y = -0.13;
-  group.add(base);
-
   demoCase.regions.forEach((region, index) => {
-    addRegionBanks(group, palette, region.center[0], region.center[2], index, colliders);
+    addRegionBanks(region.center[0], region.center[2], index, colliders);
     addLandmark(group, palette, region.landmark, region.center[0], region.center[2], region.accentColor);
   });
 
+  const wetland = createContinuousWetland(colliders);
+  group.add(wetland.terrain, wetland.water, wetland.details);
   addInstancedReeds(group, palette);
   addInstancedPebbles(group, palette);
-  const highlights = addWaterHighlights(group, palette);
   const canopyShadow = createCanopyShadow();
   group.add(canopyShadow.group);
 
@@ -83,7 +73,7 @@ export function buildEnvironment(palette: MaterialPalette): EnvironmentView {
   const restPosition = new THREE.Vector3(0, 0, 1.5);
   const rest = new THREE.Group();
   rest.position.copy(restPosition);
-  const restLeaf = new THREE.Mesh(new THREE.CircleGeometry(1.5, 12), palette.toon(0x69b96b));
+  const restLeaf = new THREE.Mesh(createLilyGeometry(1.5), palette.toon(0x728c48));
   restLeaf.rotation.x = -Math.PI / 2;
   restLeaf.position.y = -0.01;
   rest.add(restLeaf);
@@ -101,7 +91,7 @@ export function buildEnvironment(palette: MaterialPalette): EnvironmentView {
     restPosition,
     colliders,
     update(elapsed) {
-      updateWaterHighlights(highlights, elapsed);
+      wetland.update(elapsed);
       canopyShadow.update(elapsed);
       Object.values(obstacles).forEach((obstacle, index) => {
         obstacle.rotation.y = Math.sin(elapsed * 0.8 + index) * 0.035;
@@ -114,6 +104,8 @@ export function buildEnvironment(palette: MaterialPalette): EnvironmentView {
         }
       });
     },
+    renderUnderwater: wetland.renderUnderwater,
+    dispose: wetland.dispose,
     setObstacleCleared(id, cleared) {
       obstacles[id].visible = !cleared;
     },
@@ -138,105 +130,24 @@ export function buildEnvironment(palette: MaterialPalette): EnvironmentView {
   };
 }
 
-function addRegionBanks(
-  world: THREE.Group,
-  palette: MaterialPalette,
-  x: number,
-  z: number,
-  index: number,
-  colliders: TerrainCollider[],
-): void {
-  const offsets: Array<[number, number, number, number]> = [
-    [-6.4, -5.8, 2.7, 2.2],
-    [6.1, 5.7, 2.4, 2.8],
-  ];
-  offsets.forEach(([ox, oz, sx, sz], localIndex) => {
-    const depthLift = (index * 2 + localIndex) * 0.0025;
-    const bank = new THREE.Mesh(new THREE.CircleGeometry(2.2, 9), palette.toon(localIndex === 0 ? worldColors.bank : worldColors.bankLight));
-    bank.rotation.x = -Math.PI / 2;
-    bank.position.set(x + ox, -0.045 + depthLift, z + oz);
-    bank.scale.set(sx, sz, 1);
-    bank.rotation.z = (index * 0.47 + localIndex) % Math.PI;
-    bank.renderOrder = 0;
-    world.add(bank);
-    colliders.push({
-      centerX: x + ox,
-      centerZ: z + oz,
-      radiusX: 2.2 * sx + 0.32,
-      radiusZ: 2.2 * sz + 0.32,
-      rotation: bank.rotation.z,
-    });
-    const grass = new THREE.Mesh(new THREE.CircleGeometry(1.8, 9), palette.toon(index % 2 === 0 ? worldColors.grass : 0x69bd61));
-    grass.rotation.x = -Math.PI / 2;
-    grass.position.set(x + ox * 1.02, -0.025 + depthLift, z + oz * 1.02);
-    grass.scale.set(sx * 0.9, sz * 0.86, 1);
-    grass.rotation.z = bank.rotation.z;
-    grass.renderOrder = 1;
-    world.add(grass);
-  });
+function addRegionBanks(x: number, z: number, index: number, colliders: TerrainCollider[]): void {
+  const offsets: Array<[number, number, number, number]> = [[-6.4, -5.8, 2.7, 2.2], [6.1, 5.7, 2.4, 2.8]];
+  offsets.forEach(([ox, oz, sx, sz], localIndex) => colliders.push({
+    centerX: x + ox, centerZ: z + oz,
+    radiusX: 2.2 * sx + 0.32, radiusZ: 2.2 * sz + 0.32,
+    rotation: (index * 0.47 + localIndex) % Math.PI,
+  }));
 }
 
 function addLandmark(world: THREE.Group, palette: MaterialPalette, type: string, x: number, z: number, accent: number): void {
-  const landmark = new THREE.Group();
-  landmark.position.set(x + 4.7, 0, z - 4.7);
-  const accentMaterial = palette.toon(accent);
-  const leafMaterial = palette.toon(worldColors.leaf);
-  const clayMaterial = palette.toon(worldColors.bank);
-
-  if (type === "willow" || type === "reed-tower" || type === "crescent-reeds") {
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, 3.2, 6), clayMaterial);
-    trunk.position.y = 1.55;
-    landmark.add(trunk);
-    const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(1.25, 1), type === "willow" ? leafMaterial : accentMaterial);
-    crown.position.y = 3.2;
-    crown.scale.set(1.15, type === "reed-tower" ? 1.4 : 0.85, 1);
-    landmark.add(crown);
-  } else if (type === "stone-arch" || type === "lotus-arch") {
-    [-1, 1].forEach((side) => {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.32, 2.5, 6), type === "stone-arch" ? clayMaterial : leafMaterial);
-      post.position.set(side * 1.25, 1.2, 0);
-      landmark.add(post);
-    });
-    const crown = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.22, 5, 12, Math.PI), accentMaterial);
-    crown.rotation.z = Math.PI;
-    crown.position.y = 2.45;
-    landmark.add(crown);
-  } else if (type === "spring-flower" || type === "mud-bloom") {
-    for (let index = 0; index < 6; index += 1) {
-      const petal = new THREE.Mesh(new THREE.SphereGeometry(0.55, 7, 4), accentMaterial);
-      const angle = (index / 6) * Math.PI * 2;
-      petal.position.set(Math.cos(angle) * 0.7, 1.6, Math.sin(angle) * 0.7);
-      petal.scale.set(1, 0.35, 0.6);
-      landmark.add(petal);
-    }
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 1.8, 5), leafMaterial);
-    stem.position.y = 0.8;
-    landmark.add(stem);
-  } else if (type === "nest") {
-    const nest = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.22, 6, 14), clayMaterial);
-    nest.rotation.x = Math.PI / 2;
-    nest.position.y = 0.15;
-    landmark.add(nest);
-    for (let index = 0; index < 4; index += 1) {
-      const egg = new THREE.Mesh(new THREE.SphereGeometry(0.28, 7, 5), palette.toon(worldColors.cream));
-      egg.scale.y = 1.25;
-      egg.position.set((index - 1.5) * 0.36, 0.36, Math.sin(index) * 0.2);
-      landmark.add(egg);
-    }
-  } else {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.2, 2.6, 6), clayMaterial);
-    post.position.y = 1.25;
-    landmark.add(post);
-    const topper = new THREE.Mesh(new THREE.OctahedronGeometry(0.75, 0), accentMaterial);
-    topper.position.y = 2.8;
-    landmark.add(topper);
-  }
+  const landmark=createLandmarkModel(type,palette,accent);
+  landmark.position.set(x+4.7,0,z-4.7);
   world.add(landmark);
 }
 
 function addInstancedReeds(world: THREE.Group, palette: MaterialPalette): void {
   const count = 96;
-  const reeds = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.035, 0.055, 1, 5), palette.toon(0x397a50), count);
+  const reeds = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.018, 0.03, 1, 6), palette.toon(0x3b7937), count);
   const dummy = new THREE.Object3D();
   for (let index = 0; index < count; index += 1) {
     const region = demoCase.regions[index % demoCase.regions.length]!;
@@ -249,12 +160,21 @@ function addInstancedReeds(world: THREE.Group, palette: MaterialPalette): void {
     reeds.setMatrixAt(index, dummy.matrix);
   }
   reeds.instanceMatrix.needsUpdate = true;
+  reeds.castShadow = true;
+  reeds.receiveShadow = true;
   world.add(reeds);
+  const heads = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.065, 0.22, 3, 6), palette.toon(0x73502c), count);
+  for(let i=0;i<count;i++) {
+    reeds.getMatrixAt(i,dummy.matrix);dummy.matrix.decompose(dummy.position,dummy.quaternion,dummy.scale);
+    dummy.position.y += dummy.scale.y * 0.55;
+    dummy.scale.set(1,1,1);dummy.updateMatrix();heads.setMatrixAt(i,dummy.matrix);
+  }
+  heads.castShadow=true;world.add(heads);
 }
 
 function addInstancedPebbles(world: THREE.Group, palette: MaterialPalette): void {
   const count = 42;
-  const pebbles = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.32, 0), palette.toon(0xc77865), count);
+  const pebbles = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.32, 1), palette.toon(0x8c8065), count);
   const dummy = new THREE.Object3D();
   for (let index = 0; index < count; index += 1) {
     const region = demoCase.regions[(index * 5) % demoCase.regions.length]!;
@@ -269,47 +189,6 @@ function addInstancedPebbles(world: THREE.Group, palette: MaterialPalette): void
   world.add(pebbles);
 }
 
-function addWaterHighlights(world: THREE.Group, palette: MaterialPalette): WaterHighlights {
-  const material = palette.basic(worldColors.waterLight, { transparent: true, opacity: 0.28, depthWrite: false });
-  const positions: THREE.Vector3[] = [];
-  const rotations: number[] = [];
-  const widths: number[] = [];
-  demoCase.regions.forEach((region, regionIndex) => {
-    [0, 1].forEach((lineIndex) => {
-      positions.push(
-        new THREE.Vector3(
-          region.center[0] + (lineIndex ? 2.2 : -2.4),
-          -0.015,
-          region.center[2] + (lineIndex ? 1.8 : -1.5),
-        ),
-      );
-      rotations.push(regionIndex % 2 === 0 ? 0.16 : -0.14);
-      widths.push(2.2 + lineIndex * 0.8);
-    });
-  });
-
-  const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), material, positions.length);
-  mesh.renderOrder = 1;
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  world.add(mesh);
-  const highlights = { mesh, positions, rotations, widths, dummy: new THREE.Object3D() };
-  updateWaterHighlights(highlights, 0);
-  return highlights;
-}
-
-function updateWaterHighlights(highlights: WaterHighlights, elapsed: number): void {
-  highlights.positions.forEach((position, index) => {
-    highlights.dummy.position.copy(position);
-    highlights.dummy.position.x += Math.sin(elapsed * 0.35 + index * 1.7) * 0.08;
-    highlights.dummy.rotation.set(-Math.PI / 2, 0, highlights.rotations[index]!);
-    highlights.dummy.scale.set(highlights.widths[index]!, 0.07, 1);
-    highlights.dummy.updateMatrix();
-    highlights.mesh.setMatrixAt(index, highlights.dummy.matrix);
-  });
-  highlights.mesh.instanceMatrix.needsUpdate = true;
-  (highlights.mesh.material as THREE.MeshBasicMaterial).opacity = 0.24 + (Math.sin(elapsed * 0.7) + 1) * 0.04;
-}
-
 function createObstacle(id: ObstacleId, palette: MaterialPalette): THREE.Group {
   const group = new THREE.Group();
   const warm = palette.toon(
@@ -322,7 +201,7 @@ function createObstacle(id: ObstacleId, palette: MaterialPalette): THREE.Group {
   const pieceScale = id === "silt-bubbles" ? 1.35 : id === "petal-drift" ? 1.35 : 1.15;
   for (let index = 0; index < (id === "driftwood-jam" ? 3 : 5); index += 1) {
     const piece = new THREE.Mesh(
-      id === "silt-bubbles" ? new THREE.SphereGeometry((0.28 + index * 0.03) * pieceScale, 7, 4) : id === "petal-drift" ? new THREE.CircleGeometry(0.45 * pieceScale, 6) : new THREE.CylinderGeometry(0.08 * pieceScale, 0.13 * pieceScale, 1.4 * pieceScale, 5),
+      id === "silt-bubbles" ? new THREE.SphereGeometry((0.28 + index * 0.03) * pieceScale, 20, 14) : id === "petal-drift" ? new THREE.CircleGeometry(0.45 * pieceScale, 24) : new THREE.CylinderGeometry(0.08 * pieceScale, 0.13 * pieceScale, 1.4 * pieceScale, 12),
       warm,
     );
     piece.position.set((index - 2) * 0.5, id === "silt-bubbles" ? 0.24 : 0.25, Math.sin(index * 1.7) * 0.5);
@@ -360,7 +239,7 @@ function createGate(id: GateId, palette: MaterialPalette): THREE.Group {
   const group = new THREE.Group();
   const count = id === "lotus-gate" ? 7 : 4;
   for (let index = 0; index < count; index += 1) {
-    const pad = new THREE.Mesh(new THREE.CircleGeometry(id === "lotus-gate" ? 0.78 : 0.64, 9), palette.toon(index % 2 === 0 ? 0x4fa55e : 0x69b96b));
+    const pad = new THREE.Mesh(createLilyGeometry(id === "lotus-gate" ? 0.78 : 0.64), palette.toon(index % 2 === 0 ? 0x4fa55e : 0x69b96b));
     pad.rotation.x = -Math.PI / 2;
     pad.rotation.z = index * 0.55;
     pad.position.set(id === "lotus-gate" ? (index - 3) * 1.15 : Math.sin(index) * 0.4, 0.01 + (index % 2) * 0.035, id === "lotus-gate" ? Math.sin(index) * 0.35 : (index - 1.5) * 1.15);
@@ -376,4 +255,16 @@ function createGate(id: GateId, palette: MaterialPalette): THREE.Group {
   group.userData.blocker = blocker;
   group.add(blocker);
   return group;
+}
+
+function createLilyGeometry(radius: number): THREE.ShapeGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(0,0);
+  for(let i=0;i<=48;i++) {
+    const a=0.18+(Math.PI*2-0.36)*i/48;
+    const r=radius*(1+Math.sin(a*7)*0.025);
+    shape.lineTo(Math.cos(a)*r,Math.sin(a)*r);
+  }
+  shape.lineTo(0,0);
+  return new THREE.ShapeGeometry(shape,48);
 }
